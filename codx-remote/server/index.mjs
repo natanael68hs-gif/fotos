@@ -218,7 +218,7 @@ Write-Host ""
 });
 
 app.get('/health',async(_req,res)=>{
-  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.7.0',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
+  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.7.1',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
   catch(e){json(res,500,{ok:false,error:String(e.message||e)})}
 });
 
@@ -235,7 +235,7 @@ app.get('/selftest',async(_req,res)=>{
     const row=(await q('SELECT id,device_name FROM devices WHERE id=$1 AND account_id=$2',[deviceId,account.id])).rows[0];
     const ok=!!row && row.device_name==='CODX-SELFTEST';
     await q('DELETE FROM accounts WHERE id=$1',[account.id]);
-    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.7.0'});
+    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.7.1'});
   }catch(e){
     if(account?.id){try{await q('DELETE FROM accounts WHERE id=$1',[account.id])}catch{}}
     console.error(e);
@@ -480,7 +480,11 @@ app.post('/oauth/register',async(req,res)=>{
   try{
     const uris=Array.isArray(req.body?.redirect_uris)?req.body.redirect_uris.map(String):[];
     if(!uris.length)return json(res,400,{error:'invalid_client_metadata'});
-    for(const uri of uris){const u=new URL(uri);if(u.protocol!=='https:')return json(res,400,{error:'invalid_redirect_uri'})}
+    for(const uri of uris){
+      const u=new URL(uri);
+      const loopback=(u.protocol==='http:' && ['127.0.0.1','localhost','[::1]','::1'].includes(u.hostname));
+      if(u.protocol!=='https:' && !loopback)return json(res,400,{error:'invalid_redirect_uri'});
+    }
     const id=token(24);
     await q('INSERT INTO oauth_clients(client_id,redirect_uris_json,client_name,created_at) VALUES($1,$2,$3,$4)',
       [id,JSON.stringify(uris),String(req.body?.client_name||'MCP Client').slice(0,120),now()]);
@@ -562,10 +566,10 @@ async function mcpHandler(req,res){
       return json(res,401,rpcError(req.body?.id,-32001,'Codx Remote authentication required.'));
     }
     await normalizeUsage(account);
-    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.7.0'});
+    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.7.1'});
     const msg=req.body||{};
     if(msg.method==='notifications/initialized')return json(res,204,null);
-    if(msg.method==='initialize')return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.7.0'}}));
+    if(msg.method==='initialize')return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.7.1'}}));
     if(msg.method==='ping')return json(res,200,rpcResult(msg.id,{}));
     if(msg.method==='tools/list')return json(res,200,rpcResult(msg.id,{tools:MCP_TOOLS}));
     if(msg.method!=='tools/call')return json(res,200,rpcError(msg.id,-32601,'Method not found'));
@@ -600,4 +604,4 @@ app.all('/mcp',mcpHandler);
 app.all('/api/mcp',mcpHandler);
 
 await initDb();
-app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend 0.7.0 listening on',PORT));
+app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend 0.7.1 listening on',PORT));
