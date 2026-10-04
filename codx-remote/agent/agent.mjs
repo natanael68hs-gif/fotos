@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 const SERVER = process.env.CODX_REMOTE_URL || 'https://codx-remote-zrider.vercel.app';
 const ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'CodxRemote');
 const CONFIG = path.join(ROOT, 'config.json');
-const VERSION = '0.2.0';
+const VERSION = '0.4.0';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -31,16 +31,21 @@ async function request(url, options = {}) {
   return body;
 }
 
-async function register(config) {
-  const body = {
-    deviceName: os.hostname(),
-    accountSecret: config?.accountSecret || ''
-  };
+async function openUrl(url) {
+  if (!url) return;
+  try {
+    await execFileAsync('explorer.exe', [url], { windowsHide: true, timeout: 10000 });
+  } catch {}
+}
 
+async function register(config) {
   const result = await request(SERVER + '/api/register', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(body)
+    body: JSON.stringify({
+      deviceName: os.hostname(),
+      accountSecret: config?.accountSecret || ''
+    })
   });
 
   const next = {
@@ -48,14 +53,13 @@ async function register(config) {
     accountSecret: result.accountSecret,
     deviceId: result.deviceId,
     deviceSecret: result.deviceSecret,
-    mcpUrl: result.mcpUrl,
-    manageUrl: result.manageUrl,
     deviceName: os.hostname(),
-    version: VERSION
+    version: VERSION,
+    dashboardUrl: result.dashboardUrl || (SERVER + '/dashboard')
   };
 
   await saveConfig(next);
-  return next;
+  return { config: next, authorizeUrl: result.authorizeUrl || null };
 }
 
 function authHeaders(config) {
@@ -70,6 +74,14 @@ async function heartbeat(config) {
     method: 'POST',
     headers: authHeaders(config),
     body: JSON.stringify({ deviceId: config.deviceId, agentVersion: VERSION })
+  });
+}
+
+async function setupUrl(config) {
+  return request(SERVER + '/api/device?action=setup_url', {
+    method: 'POST',
+    headers: authHeaders(config),
+    body: JSON.stringify({ deviceId: config.deviceId })
   });
 }
 
@@ -121,9 +133,7 @@ async function executeTool(name, args = {}) {
     for (const entry of entries.slice(0, 1000)) {
       const full = path.join(target, entry.name);
       let size = null;
-      try {
-        if (entry.isFile()) size = (await fs.stat(full)).size;
-      } catch {}
+      try { if (entry.isFile()) size = (await fs.stat(full)).size; } catch {}
       rows.push({
         type: entry.isDirectory() ? 'directory' : entry.isFile() ? 'file' : 'other',
         name: entry.name,
@@ -137,8 +147,7 @@ async function executeTool(name, args = {}) {
   if (name === 'read_file') {
     const target = path.resolve(String(args.path || ''));
     const maxChars = Math.min(250000, Math.max(1, Number(args.maxChars || 100000)));
-    const text = await fs.readFile(target, 'utf8');
-    return clip(text, maxChars);
+    return clip(await fs.readFile(target, 'utf8'), maxChars);
   }
 
   if (name === 'write_file') {
@@ -147,7 +156,11 @@ async function executeTool(name, args = {}) {
     await fs.mkdir(path.dirname(target), { recursive: true });
     if (args.append) await fs.appendFile(target, data, 'utf8');
     else await fs.writeFile(target, data, 'utf8');
-    return JSON.stringify({ ok: true, path: target, bytes: Buffer.byteLength(data, 'utf8'), append: !!args.append });
+    return JSON.stringify({
+      ok: true, path: target,
+      bytes: Buffer.byteLength(data, 'utf8'),
+      append: !!args.append
+    });
   }
 
   if (name === 'run_powershell') {
@@ -189,7 +202,7 @@ async function executeTool(name, args = {}) {
   throw new Error('Unknown tool: ' + name);
 }
 
-function banner(config) {
+function banner(config, authorized) {
   console.clear();
   console.log('============================================================');
   console.log('                       CODX REMOTE');
@@ -197,15 +210,10 @@ function banner(config) {
   console.log('');
   console.log('[OK] Codx Remote Agent ' + VERSION);
   console.log('[OK] Device: ' + config.deviceName);
-  console.log('[OK] Device ID: ' + config.deviceId);
   console.log('[OK] Status: Online');
+  console.log(authorized ? '[OK] Account: Authorized' : '[..] Account: Waiting for authorization in browser');
   console.log('');
-  console.log('MCP URL:');
-  console.log(config.mcpUrl);
-  console.log('');
-  console.log('Manager:');
-  console.log(config.manageUrl);
-  console.log('');
+  console.log('Dashboard opened in your browser.');
   console.log('Keep this PowerShell window open.');
   console.log('Press Ctrl+C to disconnect.');
   console.log('');
@@ -221,29 +229,60 @@ process.on('SIGINT', () => {
 async function main() {
   await fs.mkdir(ROOT, { recursive: true });
   let config = await loadConfig();
+  let authorizeUrl = null;
 
   if (!config?.deviceId || !config?.deviceSecret) {
     console.log('Registering this PC with Codx Remote...');
-    config = await register(config);
+    const registered = await register(config);
+    config = registered.config;
+    authorizeUrl = registered.authorizeUrl;
+  } else {
+    delete config.mcpUrl;
+    delete config.manageUrl;
+    config.version = VERSION;
+    config.dashboardUrl = SERVER + '/dashboard';
+    await saveConfig(config);
   }
 
+  let hb;
   try {
-    await heartbeat(config);
+    hb = await heartbeat(config);
   } catch {
     console.log('Saved device session is no longer valid. Registering again...');
-    config = await register(config);
-    await heartbeat(config);
+    const registered = await register(config);
+    config = registered.config;
+    authorizeUrl = registered.authorizeUrl;
+    hb = await heartbeat(config);
   }
 
-  banner(config);
+  if (hb.disconnect) process.exit(0);
+
+  if (!hb.authorized) {
+    try {
+      const setup = authorizeUrl ? { url: authorizeUrl } : await setupUrl(config);
+      await openUrl(setup.url);
+    } catch {
+      await openUrl(SERVER + '/register');
+    }
+  } else {
+    await openUrl(SERVER + '/dashboard');
+  }
+
+  banner(config, !!hb.authorized);
 
   let lastHeartbeat = 0;
 
   while (!stopping) {
     try {
       if (Date.now() - lastHeartbeat > 8000) {
-        await heartbeat(config);
+        const status = await heartbeat(config);
         lastHeartbeat = Date.now();
+
+        if (status.disconnect) {
+          console.log('[REMOTE] Disconnect requested from dashboard.');
+          stopping = true;
+          break;
+        }
       }
 
       const data = await poll(config);
@@ -278,6 +317,8 @@ async function main() {
       await sleep(2500);
     }
   }
+
+  console.log('Codx Remote disconnected.');
 }
 
 main().catch(error => {
