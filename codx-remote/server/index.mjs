@@ -111,7 +111,13 @@ async function clearSession(req,res){
 function browserPostAllowed(req,allowed=[BACKEND]){
   const origin=req.get('origin');
   if(origin){
-    try{return allowed.includes(new URL(origin).origin)}catch{return false}
+    try{
+      const actual=new URL(origin).origin;
+      const host=String(req.get('host')||'').toLowerCase();
+      const forwardedProto=String(req.get('x-forwarded-proto')||req.protocol||'https').split(',')[0].trim()||'https';
+      const requestOrigin=host?forwardedProto+'://'+host:'';
+      return allowed.includes(actual)||actual===requestOrigin;
+    }catch{return false}
   }
   const fetchSite=String(req.get('sec-fetch-site')||'').toLowerCase();
   return !fetchSite || fetchSite==='same-origin' || fetchSite==='none';

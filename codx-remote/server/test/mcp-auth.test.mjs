@@ -181,6 +181,12 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
       if(origin)headers.Origin=origin;else headers['Sec-Fetch-Site']='same-origin';
       return fetch(base+'/oauth/authorize',{method:'POST',redirect:'manual',headers,body:new URLSearchParams({consent_ticket:ticket,...extra})});
     };
+    const approveViaRequestHost=ticket=>{
+      const url=new URL(base);
+      return fetch(base+'/oauth/authorize',{method:'POST',redirect:'manual',headers:{
+        Cookie:cookie(0),Origin:url.origin,Host:url.host,'Content-Type':'application/x-www-form-urlencoded'
+      },body:new URLSearchParams({consent_ticket:ticket})});
+    };
     const exchange=p=>fetch(base+'/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(p)});
     const anonymous=await (await fetch(base+authPath)).text();
     assert.match(anonymous,/Entrar para autorizar/);assert.equal(/type="(?:email|password)"/.test(anonymous),false);
@@ -193,6 +199,7 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     assert.equal((await approve(ticket,1)).status,403);
     assert.equal((await approve(ticket,0,{},'https://evil.example')).status,403);
     assert.equal((await approve(await consentPage(0),0,{},'')).status,303);
+    assert.equal((await approveViaRequestHost(await consentPage(0))).status,303);
     assert.equal((await approve('invented-ticket')).status,403);
     const approval=await approve(ticket,0,{account_id:'account-1',redirect_uri:'https://evil.example',state:'tampered'});
     assert.equal(approval.status,303);
