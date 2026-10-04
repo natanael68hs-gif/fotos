@@ -49,8 +49,16 @@ export default async function handler(req, res) {
 
   if (action === 'heartbeat') {
     device.lastSeen = Date.now();
+    const disconnect = !!device.disconnectRequested;
+    if (disconnect) device.disconnectRequested = false;
     await putState('state/devices/' + deviceId + '.json', device);
-    return json(res, 200, { ok: true, revoked: false });
+    const account = await getState('state/accounts/' + device.accountId + '.json');
+    return json(res, 200, {
+      ok: true,
+      revoked: false,
+      disconnect,
+      authorized: !!account?.email
+    });
   }
 
   if (action === 'poll') {
