@@ -1,4 +1,4 @@
-const SITE='__SITE_URL__';
+const SITE='https://codx-remote-zrider.vercel.app';
 const cmd='irm '+SITE+'/install.ps1 | iex';
 const el=document.getElementById('installCommand');
 if(el) el.textContent=cmd;
