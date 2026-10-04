@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "codxRemote": {
+      "type": "http",
       "url": "https://codx-remote-api-zrider.onrender.com/mcp"
     }
   }
