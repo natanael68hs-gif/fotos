@@ -34,7 +34,11 @@ async function request(url, options = {}) {
 async function openUrl(url) {
   if (!url) return false;
 
+  const authFile = path.join(ROOT, 'authorize.url');
+  try { await fs.writeFile(authFile, url, 'utf8'); } catch {}
+
   const attempts = [
+    ['powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', 'Start-Process -FilePath ' + JSON.stringify(url)]],
     ['rundll32.exe', ['url.dll,FileProtocolHandler', url]],
     ['cmd.exe', ['/d', '/s', '/c', 'start', '', url]],
     ['explorer.exe', [url]]
@@ -48,7 +52,8 @@ async function openUrl(url) {
   }
 
   console.log('[WARN] Browser could not be opened automatically.');
-  console.log('[OPEN] ' + url);
+  console.log('[INFO] Run this in another PowerShell to open authorization:');
+  console.log('Start-Process (Get-Content "$env:LOCALAPPDATA\\CodxRemote\\authorize.url" -Raw)');
   return false;
 }
 
@@ -300,6 +305,7 @@ async function main() {
       await openUrl(SERVER + '/setup');
     }
   } else {
+    try { await fs.unlink(path.join(ROOT, 'authorize.url')); } catch {}
     await openUrl(SERVER + '/dashboard');
   }
 
