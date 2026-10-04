@@ -47,6 +47,30 @@ export default async function handler(req, res) {
     });
   }
 
+  if (action === 'setup_url') {
+    const account = await getState('state/accounts/' + device.accountId + '.json');
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const base = proto + '://' + req.headers.host;
+
+    if (account?.email) {
+      return json(res, 200, { ok: true, authorized: true, url: base + '/dashboard' });
+    }
+
+    const setupToken = randomToken(32);
+    await putState('state/setup/' + hash(setupToken) + '.json', {
+      accountId: device.accountId,
+      deviceId,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 30 * 60 * 1000
+    });
+
+    return json(res, 200, {
+      ok: true,
+      authorized: false,
+      url: base + '/authorize?setup=' + encodeURIComponent(setupToken)
+    });
+  }
+
   if (action === 'heartbeat') {
     device.lastSeen = Date.now();
     const disconnect = !!device.disconnectRequested;
