@@ -5,6 +5,29 @@ $backend = 'https://codx-remote-api-zrider.onrender.com'
 $agentPath = Join-Path $installRoot 'agent.mjs'
 $legacyRoot = Join-Path $env:LOCALAPPDATA 'CodxRemote'
 Write-Host 'Codx Remote 0.8.0 - instalacao automatica para ChatGPT' -ForegroundColor Cyan
+# A complete installation can be started without downloads or credential changes.
+$requiredFiles = @('agent.mjs', 'start.ps1', 'stop.ps1', 'node-path.txt', 'config.json')
+$complete = $true
+foreach ($file in $requiredFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $installRoot $file) -PathType Leaf)) { $complete = $false }
+}
+if ($complete -and $env:CODX_REMOTE_FORCE_UPDATE -ne '1') {
+    $installedNode = (Get-Content -LiteralPath (Join-Path $installRoot 'node-path.txt') -Raw).Trim()
+    if (Test-Path -LiteralPath $installedNode -PathType Leaf) {
+        $running = Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object {
+            $_.CommandLine -and $_.CommandLine.Contains($agentPath)
+        }
+        if ($running) {
+            Write-Host '[OK] Codx Remote ja esta rodando em segundo plano.' -ForegroundColor Green
+        } else {
+            & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $installRoot 'start.ps1') -Setup
+            if ($LASTEXITCODE -ne 0) { throw 'Falha ao iniciar. Verifique os logs na pasta de instalacao.' }
+            Write-Host '[OK] Codx Remote iniciado em segundo plano.' -ForegroundColor Green
+        }
+        Write-Host 'O agente se comunica com o backend MCP. Pode fechar este PowerShell.'
+        return
+    }
+}
 New-Item -ItemType Directory -Path $installRoot -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $installRoot 'logs') -Force | Out-Null
 $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
