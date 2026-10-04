@@ -5,10 +5,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
-const SERVER = process.env.CODX_REMOTE_URL || 'https://codx-remote-zrider.vercel.app';
+const SERVER = process.env.CODX_REMOTE_URL || 'https://codx-remote-api-zrider.onrender.com';
 const ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'CodxRemote');
 const CONFIG = path.join(ROOT, 'config.json');
-const VERSION = '0.5.1';
+const VERSION = '0.6.0';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
