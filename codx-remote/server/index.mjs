@@ -13,7 +13,7 @@ const PORT=Number(process.env.PORT||10000);
 const SITE=(process.env.PUBLIC_SITE_URL||'https://codx-remote-zrider.vercel.app').replace(/\/$/,'');
 const BACKEND=(process.env.PUBLIC_BACKEND_URL||'https://codx-remote-api-zrider.onrender.com').replace(/\/$/,'');
 const MARKETING_SITE=(process.env.MARKETING_SITE_URL||'https://codx-remote.onrender.com').replace(/\/$/,'');
-const RESOURCE=SITE+'/api/mcp';
+const RESOURCE=BACKEND+'/mcp';
 const COOKIE='codx_session';
 const SESSION_MS=30*24*60*60*1000;
 const app=express();
@@ -218,7 +218,7 @@ Write-Host ""
 });
 
 app.get('/health',async(_req,res)=>{
-  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.6.0',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
+  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.7.0',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
   catch(e){json(res,500,{ok:false,error:String(e.message||e)})}
 });
 
@@ -235,7 +235,7 @@ app.get('/selftest',async(_req,res)=>{
     const row=(await q('SELECT id,device_name FROM devices WHERE id=$1 AND account_id=$2',[deviceId,account.id])).rows[0];
     const ok=!!row && row.device_name==='CODX-SELFTEST';
     await q('DELETE FROM accounts WHERE id=$1',[account.id]);
-    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.5.1'});
+    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.7.0'});
   }catch(e){
     if(account?.id){try{await q('DELETE FROM accounts WHERE id=$1',[account.id])}catch{}}
     console.error(e);
@@ -465,12 +465,12 @@ app.post('/dashboard/device',async(req,res)=>{
 });
 
 app.get('/.well-known/oauth-protected-resource',(_req,res)=>json(res,200,{
-  resource:RESOURCE,authorization_servers:[SITE],scopes_supported:['codx.remote'],
+  resource:RESOURCE,authorization_servers:[BACKEND],scopes_supported:['codx.remote'],
   bearer_methods_supported:['header'],resource_name:'Codx Remote'
 }));
 app.get('/.well-known/oauth-authorization-server',(_req,res)=>json(res,200,{
-  issuer:SITE,authorization_endpoint:SITE+'/oauth/authorize',token_endpoint:SITE+'/oauth/token',
-  registration_endpoint:SITE+'/oauth/register',response_types_supported:['code'],
+  issuer:BACKEND,authorization_endpoint:BACKEND+'/oauth/authorize',token_endpoint:BACKEND+'/oauth/token',
+  registration_endpoint:BACKEND+'/oauth/register',response_types_supported:['code'],
   grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],
   token_endpoint_auth_methods_supported:['none'],scopes_supported:['codx.remote'],
   authorization_response_iss_parameter_supported:true
@@ -520,7 +520,7 @@ app.all('/oauth/authorize',async(req,res)=>{
       [sha(code),a.id,String(p.client_id),v.redirect,String(p.code_challenge),v.resource,v.scope,now()+5*60*1000]);
     const target=new URL(v.redirect);target.searchParams.set('code',code);
     if(p.state)target.searchParams.set('state',String(p.state));
-    target.searchParams.set('iss',SITE);
+    target.searchParams.set('iss',BACKEND);
     res.redirect(302,target.toString());
   }catch(e){console.error(e);res.status(500).send('OAuth error')}
 });
@@ -554,18 +554,18 @@ app.post('/oauth/token',async(req,res)=>{
   }catch(e){console.error(e);json(res,500,{error:'token_error'})}
 });
 
-app.all('/api/mcp',async(req,res)=>{
+async function mcpHandler(req,res){
   try{
     const account=await accountForMcp(req);
     if(!account){
-      res.setHeader('WWW-Authenticate','Bearer resource_metadata="'+SITE+'/.well-known/oauth-protected-resource", scope="codx.remote"');
+      res.setHeader('WWW-Authenticate','Bearer resource_metadata="'+BACKEND+'/.well-known/oauth-protected-resource", scope="codx.remote"');
       return json(res,401,rpcError(req.body?.id,-32001,'Codx Remote authentication required.'));
     }
     await normalizeUsage(account);
-    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.6.0'});
+    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.7.0'});
     const msg=req.body||{};
     if(msg.method==='notifications/initialized')return json(res,204,null);
-    if(msg.method==='initialize')return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.5.0'}}));
+    if(msg.method==='initialize')return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.7.0'}}));
     if(msg.method==='ping')return json(res,200,rpcResult(msg.id,{}));
     if(msg.method==='tools/list')return json(res,200,rpcResult(msg.id,{tools:MCP_TOOLS}));
     if(msg.method!=='tools/call')return json(res,200,rpcError(msg.id,-32601,'Method not found'));
@@ -594,7 +594,10 @@ app.all('/api/mcp',async(req,res)=>{
     await q('DELETE FROM commands WHERE id=$1',[id]);
     return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:'Timed out waiting for the connected PC.'}],isError:true}));
   }catch(e){console.error(e);json(res,500,rpcError(req.body?.id,-32000,'Codx Remote backend error'))}
-});
+}
+
+app.all('/mcp',mcpHandler);
+app.all('/api/mcp',mcpHandler);
 
 await initDb();
-app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend 0.6.0 listening on',PORT));
+app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend 0.7.0 listening on',PORT));
