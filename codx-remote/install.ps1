@@ -8,34 +8,29 @@ $ProfileMarker = Join-Path $Root 'profile.ready'
 New-Item -ItemType Directory -Force -Path $Root,$Bin | Out-Null
 
 function Write-Step([string]$Text) { Write-Host " - $Text" -ForegroundColor DarkGray }
-function Write-Ok([string]$Text) { Write-Host "✅ $Text" -ForegroundColor Green }
-function Write-Warn([string]$Text) { Write-Host "⚠️  $Text" -ForegroundColor Yellow }
+function Write-Ok([string]$Text) { Write-Host "[OK] $Text" -ForegroundColor Green }
+function Write-Warn([string]$Text) { Write-Host "[WARN] $Text" -ForegroundColor Yellow }
 
 Clear-Host
-Write-Host @'
- ██████╗ ██████╗ ██████╗ ██╗  ██╗    ██████╗ ███████╗███╗   ███╗ ██████╗ ████████╗███████╗
-██╔════╝██╔═══██╗██╔══██╗╚██╗██╔╝    ██╔══██╗██╔════╝████╗ ████║██╔═══██╗╚══██╔══╝██╔════╝
-██║     ██║   ██║██║  ██║ ╚███╔╝     ██████╔╝█████╗  ██╔████╔██║██║   ██║   ██║   █████╗
-██║     ██║   ██║██║  ██║ ██╔██╗     ██╔══██╗██╔══╝  ██║╚██╔╝██║██║   ██║   ██║   ██╔══╝
-╚██████╗╚██████╔╝██████╔╝██╔╝ ██╗    ██║  ██║███████╗██║ ╚═╝ ██║╚██████╔╝   ██║   ███████╗
- ╚═════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═╝    ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝ ╚═════╝    ╚═╝   ╚══════╝
-'@ -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
+Write-Host "                    CODX REMOTE" -ForegroundColor Cyan
+Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "🌐 Private MCP Connection" -ForegroundColor Cyan
+Write-Host "Private MCP Connection" -ForegroundColor Cyan
 Write-Host ""
 
 # Node.js / npx
 $npx = Get-Command npx.cmd -ErrorAction SilentlyContinue
 if (-not $npx) {
-  Write-Step "Node.js não encontrado. Instalando Node.js LTS..."
+  Write-Step "Node.js nao encontrado. Instalando Node.js LTS..."
   $winget = Get-Command winget.exe -ErrorAction SilentlyContinue
   if (-not $winget) {
-    throw "winget não foi encontrado. Instale o Node.js LTS e execute este comando novamente."
+    throw "winget nao foi encontrado. Instale o Node.js LTS e execute este comando novamente."
   }
   & winget.exe install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements --silent
   $env:Path = [Environment]::GetEnvironmentVariable('Path','Machine') + ';' + [Environment]::GetEnvironmentVariable('Path','User')
   $npx = Get-Command npx.cmd -ErrorAction SilentlyContinue
-  if (-not $npx) { throw "Node.js foi instalado, mas o npx ainda não apareceu no PATH. Feche e abra o PowerShell e rode o comando novamente." }
+  if (-not $npx) { throw "Node.js foi instalado, mas o npx ainda nao apareceu no PATH. Feche e abra o PowerShell e rode o comando novamente." }
   Write-Ok "Node.js instalado"
 } else {
   Write-Ok "Node.js / npx encontrado"
@@ -49,7 +44,7 @@ if (-not (Test-Path $TunnelExe)) {
   $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
   $asset = $release.assets | Where-Object { $_.name -match "^tunnel-client-v.*-windows-$arch\.zip$" } | Select-Object -First 1
   $sums = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' } | Select-Object -First 1
-  if (-not $asset) { throw "Não encontrei o pacote Windows $arch na release mais recente do tunnel-client." }
+  if (-not $asset) { throw "Nao encontrei o pacote Windows $arch na release mais recente do tunnel-client." }
 
   $zip = Join-Path $env:TEMP $asset.name
   Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip -UseBasicParsing
@@ -70,7 +65,7 @@ if (-not (Test-Path $TunnelExe)) {
   New-Item -ItemType Directory -Force -Path $extract | Out-Null
   Expand-Archive -Path $zip -DestinationPath $extract -Force
   $found = Get-ChildItem -Path $extract -Recurse -Filter 'tunnel-client.exe' | Select-Object -First 1
-  if (-not $found) { throw "tunnel-client.exe não encontrado dentro do pacote." }
+  if (-not $found) { throw "tunnel-client.exe nao encontrado dentro do pacote." }
   Copy-Item $found.FullName $TunnelExe -Force
   Remove-Item $extract -Recurse -Force -ErrorAction SilentlyContinue
   Remove-Item $zip -Force -ErrorAction SilentlyContinue
@@ -87,8 +82,8 @@ if (Test-Path $ConfigPath) {
 
 if (-not $cfg -or -not $cfg.tunnelId -or -not $cfg.apiKeyProtected) {
   Write-Host ""
-  Write-Host "🔐 Primeira configuração" -ForegroundColor Cyan
-  Write-Host "Você precisa de um Tunnel ID e uma Runtime API key da OpenAI."
+  Write-Host "Primeira configuracao" -ForegroundColor Cyan
+  Write-Host "Voce precisa de um Tunnel ID e uma Runtime API key da OpenAI."
   Write-Host "Guia: https://developers.openai.com/api/docs/guides/secure-mcp-tunnels" -ForegroundColor DarkGray
   Write-Host ""
 
@@ -105,7 +100,7 @@ if (-not $cfg -or -not $cfg.tunnelId -or -not $cfg.apiKeyProtected) {
     createdAt = (Get-Date).ToString('o')
   }
   $cfg | ConvertTo-Json | Set-Content -Path $ConfigPath -Encoding UTF8
-  Write-Ok "Configuração salva em $ConfigPath"
+  Write-Ok "Configuracao salva em $ConfigPath"
 }
 
 $SecureStored = ConvertTo-SecureString $cfg.apiKeyProtected
@@ -126,16 +121,16 @@ if (-not (Test-Path $ProfileMarker)) {
   Write-Ok "Perfil criado"
 }
 
-Write-Step "Validando MCP e túnel..."
+Write-Step "Validando MCP e tunel..."
 & $TunnelExe doctor --profile codx-remote --explain
 if ($LASTEXITCODE -ne 0) {
-  Write-Warn "O diagnóstico encontrou um problema. Confira o Tunnel ID, a Runtime API key e as permissões do túnel."
-  Write-Host "Você pode apagar $ConfigPath para refazer a autenticação." -ForegroundColor DarkGray
-  throw "Codx Remote não está pronto."
+  Write-Warn "O diagnostico encontrou um problema. Confira o Tunnel ID, a Runtime API key e as permissoes do tunel."
+  Write-Host "Voce pode apagar $ConfigPath para refazer a autenticação." -ForegroundColor DarkGray
+  throw "Codx Remote nao esta pronto."
 }
 
 Write-Host ""
-Write-Ok "Codx Remote está pronto"
+Write-Ok "Codx Remote esta pronto"
 Write-Host "   Device: $env:COMPUTERNAME"
 Write-Host "   Status: Online enquanto esta janela estiver aberta"
 Write-Host "   Manager local: http://127.0.0.1:8080/ui"
@@ -146,12 +141,12 @@ Write-Host "│ Selecione o Tunnel ID: $($cfg.tunnelId)"
 Write-Host "│ Depois volte ao chat e use o app MCP."
 Write-Host "└─ Pressione Ctrl+C para desconectar." -ForegroundColor Cyan
 Write-Host ""
-Write-Host "🚀 Iniciando tunnel-client..." -ForegroundColor Cyan
+Write-Host "Iniciando tunnel-client..." -ForegroundColor Cyan
 
 try {
   & $TunnelExe run --profile codx-remote --health.listen-addr 127.0.0.1:8080 --open-web-ui
 } finally {
   $env:CONTROL_PLANE_API_KEY = $null
   Write-Host ""
-  Write-Host "🔌 Codx Remote desconectado." -ForegroundColor Yellow
+  Write-Host "Codx Remote desconectado." -ForegroundColor Yellow
 }
