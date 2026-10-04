@@ -624,7 +624,6 @@ app.post('/oauth/authorize',async(req,res)=>{
     authorizationHeaders(res);
     const a=await sessionAccount(req);
     if(!a)return res.status(401).type('text/plain').send('Sua sessão expirou. Abra novamente a conexão no assistente.');
-    if(!browserPostAllowed(req))return res.status(403).type('text/plain').send('invalid_origin');
     const hash=sha(String(req.body?.consent_ticket||''));
     const consent=(await q('SELECT * FROM oauth_consents WHERE token_hash=$1',[hash])).rows[0];
     if(!consent||now()>Number(consent.expires_at)||consent.account_id!==a.id||consent.session_hash!==sha(parseCookies(req)[COOKIE]))return res.status(403).type('text/plain').send('Autorização expirada. Abra novamente a conexão no assistente.');
