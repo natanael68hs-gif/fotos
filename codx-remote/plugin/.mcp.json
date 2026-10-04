@@ -1,8 +1,6 @@
 {
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "codxRemote": {
-      "type": "streamable-http",
       "url": "https://codx-remote-api-zrider.onrender.com/mcp"
     }
   }
