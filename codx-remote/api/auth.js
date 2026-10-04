@@ -94,5 +94,26 @@ export default async function handler(req,res){
     return json(res,200,await snapshot(account));
   }
 
+  if(action==='selftest'){
+    const email='selftest-'+crypto.randomUUID()+'@example.invalid';
+    const password=randomToken(18);
+    let account=null;
+    try{
+      account=await freshAccount();
+      account.name='Self Test';
+      await setAccountCredentials(account,email,password);
+      const verified=await verifyAccountLogin(email,password);
+      const ok=verified?.accountId===account.accountId;
+      await Promise.all([
+        deleteState('state/accounts/'+account.accountId+'.json'),
+        deleteState('state/email/'+hash(email)+'.json')
+      ]);
+      return json(res,ok?200:500,{ok,auth:true,version:'0.4.0'});
+    }catch(error){
+      if(account?.accountId) await deleteState('state/accounts/'+account.accountId+'.json');
+      return json(res,500,{ok:false,error:String(error?.message||error)});
+    }
+  }
+
   return json(res,400,{error:'unknown_action'});
 }
