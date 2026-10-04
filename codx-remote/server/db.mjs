@@ -1,11 +1,23 @@
 import pg from 'pg';
+import { newDb } from 'pg-mem';
 const { Pool } = pg;
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized:false } : undefined,
-  max: 10
-});
+let pool;
+
+if (process.env.DATABASE_URL) {
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized:false } : undefined,
+    max: 10
+  });
+} else {
+  const mem = newDb({ autoCreateForeignKeyIndices: true });
+  const adapter = mem.adapters.createPg();
+  pool = new adapter.Pool();
+  console.warn('[WARN] DATABASE_URL is not configured. Using temporary in-memory database.');
+}
+
+export { pool };
 
 export async function q(text, params=[]) {
   return pool.query(text, params);
