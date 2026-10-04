@@ -6,9 +6,9 @@ import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
 const SERVER = process.env.CODX_REMOTE_URL || 'https://codx-remote-api-zrider.onrender.com';
-const ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'CodxRemote');
+const ROOT = process.env.CODX_REMOTE_HOME || path.join(os.homedir(), '.codx-server-remote');
 const CONFIG = path.join(ROOT, 'config.json');
-const VERSION = '0.6.0';
+const VERSION = '0.8.0';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -87,6 +87,25 @@ function authHeaders(config) {
     'content-type': 'application/json',
     'authorization': 'Bearer ' + config.deviceSecret
   };
+}
+
+async function exportConnection(config) {
+  const data = await request(SERVER + '/api/device?action=mcp_config', {
+    method: 'POST', headers: authHeaders(config),
+    body: JSON.stringify({ deviceId: config.deviceId })
+  });
+  await fs.writeFile(path.join(ROOT, 'mcp.json'), JSON.stringify(data.config, null, 2), {mode:0o600});
+  await fs.writeFile(path.join(ROOT, 'chatgpt.txt'),
+    'Codx Remote para ChatGPT\r\n\r\n' +
+    'Plugin: https://chatgpt.com/plugins/plugins_6ac2118e331481918f078b95bd26c3fc\r\n' +
+    'MCP: ' + SERVER + '/mcp\r\n' +
+    'Instale/conecte o plugin no ChatGPT e autorize sua conta uma vez.\r\n' +
+    'A pasta local nao instala ferramentas automaticamente dentro do ChatGPT.\r\n' +
+    'Mantenha o agente ativo. Nao compartilhe config.json ou mcp.json.\r\n');
+  console.log('[OK] Connection files saved in ' + ROOT);
+  if (process.env.CODX_REMOTE_OPEN_CHAT === '1') {
+    await openUrl('https://chatgpt.com/plugins/plugins_6ac2118e331481918f078b95bd26c3fc');
+  }
 }
 
 async function heartbeat(config) {
@@ -242,9 +261,12 @@ function banner(config, authorized) {
   console.log(authorized ? '[OK] Account: Authorized' : '[..] Account: Waiting for authorization in browser');
   if (!authorized) console.log('[..] Authorization page: Render secure setup');
   console.log('');
-  console.log('Dashboard opened in your browser.');
-  console.log('Keep this PowerShell window open.');
-  console.log('Press Ctrl+C to disconnect.');
+  if (process.env.CODX_REMOTE_HEADLESS === '1') {
+    console.log('Running in background. Files and logs: ' + ROOT);
+  } else {
+    console.log('Keep this PowerShell window open.');
+    console.log('Press Ctrl+C to disconnect.');
+  }
   console.log('');
 }
 
@@ -306,18 +328,24 @@ async function main() {
     }
   } else {
     try { await fs.unlink(path.join(ROOT, 'authorize.url')); } catch {}
-    await openUrl(SERVER + '/dashboard');
+    if (process.env.CODX_REMOTE_HEADLESS !== '1') await openUrl(SERVER + '/dashboard');
   }
 
   banner(config, !!hb.authorized);
 
   let lastHeartbeat = 0;
+  let connectionExported = false;
 
   while (!stopping) {
     try {
       if (Date.now() - lastHeartbeat > 8000) {
         const status = await heartbeat(config);
         lastHeartbeat = Date.now();
+
+        if (status.authorized && !connectionExported) {
+          await exportConnection(config);
+          connectionExported = true;
+        }
 
         if (status.disconnect) {
           console.log('[REMOTE] Disconnect requested from dashboard.');
