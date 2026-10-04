@@ -584,8 +584,10 @@ function authorizationPath(p){
 function consentHtml(account,client,ticket){
   return page('Autorizar conexão','<main class="auth-shell"><form class="auth-card" method="post" action="/oauth/authorize"><span class="eyebrow"><span class="live-dot"></span> SUA CONTA, CONECTADA</span><h1>Seu assistente, conectado.</h1><p><strong>'+esc(client.client_name||'Cliente MCP')+'</strong> solicita acesso aos computadores da sua conta.</p><div class="setting-help" style="padding:18px 0"><strong>'+esc(account.name||'Sua conta Codx Remote')+'</strong><br>'+esc(account.email||'Conta vinculada ao seu computador')+'</div><p>Você permite consultar e editar arquivos, executar comandos e gerenciar processos nos seus dispositivos autorizados.</p><input type="hidden" name="consent_ticket" value="'+esc(ticket)+'"><button class="btn" style="width:100%" type="submit">Autorizar conexão</button><p class="setting-help">A conexão usa automaticamente sua sessão salva. Você pode revogar o acesso no dashboard.</p></form></main>');
 }
-function authorizationHeaders(res){
-  res.setHeader('Content-Security-Policy',"frame-ancestors 'none'; form-action 'self'");
+function authorizationHeaders(res,registeredRedirect){
+  // Keep form protection; OAuth may return only to this request's registered client.
+  const callback=registeredRedirect?' '+new URL(registeredRedirect).origin:'';
+  res.setHeader('Content-Security-Policy',"frame-ancestors 'none'; form-action 'self'"+callback);
   res.setHeader('X-Frame-Options','DENY');
 }
 app.get('/oauth/authorize',async(req,res)=>{
@@ -593,6 +595,7 @@ app.get('/oauth/authorize',async(req,res)=>{
     authorizationHeaders(res);
     const p=req.query,v=await validateAuthParams(p);
     if(v.error)return res.status(400).type('text/plain').send(v.error);
+    authorizationHeaders(res,v.redirect);
     const a=await sessionAccount(req);
     if(!a)return res.type('html').send(page('Conectar sua conta','<main class="auth-shell"><div class="auth-card"><span class="eyebrow">CONECTAR CODX REMOTE</span><h1>Conecte sua conta.</h1><p>Entre uma vez no Codx Remote. Depois, basta clicar em Autorizar conexão para usar seus computadores neste assistente.</p><a class="btn" style="width:100%" href="/login?next='+esc(encodeURIComponent(authorizationPath(p)))+'">Entrar para autorizar</a></div></main>'));
     await q('DELETE FROM oauth_consents WHERE expires_at<$1',[now()]);
@@ -613,6 +616,7 @@ app.post('/oauth/authorize',async(req,res)=>{
     if(!consent||now()>Number(consent.expires_at)||consent.account_id!==a.id||consent.session_hash!==sha(parseCookies(req)[COOKIE]))return res.status(403).type('text/plain').send('Autorização expirada. Abra novamente a conexão no assistente.');
     const p=JSON.parse(consent.request_json),v=await validateAuthParams(p);
     if(v.error)return res.status(400).type('text/plain').send(v.error);
+    authorizationHeaders(res,v.redirect);
     // Consume the session-bound consent once; parameters always come from the server.
     const used=await q('DELETE FROM oauth_consents WHERE token_hash=$1 RETURNING token_hash',[hash]);
     if(!used.rows.length)return res.status(403).type('text/plain').send('Autorização já utilizada.');

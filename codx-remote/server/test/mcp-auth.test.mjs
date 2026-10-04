@@ -169,6 +169,7 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
       const response=await fetch(base+authPath,{headers:{Cookie:cookie(i)}});
       assert.equal(response.status,200);
       assert.equal(response.headers.get('x-frame-options'),'DENY');
+      assert.equal(response.headers.get('content-security-policy'),"frame-ancestors 'none'; form-action 'self' http://127.0.0.1:50820");
       const html=await response.text();
       assert.match(html,/Autorizar conexão/);assert.match(html,/Codex &lt;one-click&gt;/);
       assert.equal(/type="(?:email|password)"/.test(html),false);
@@ -190,6 +191,7 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     assert.equal((await approve('invented-ticket')).status,403);
     const approval=await approve(ticket,0,{account_id:'account-1',redirect_uri:'https://evil.example',state:'tampered'});
     assert.equal(approval.status,303);
+    assert.equal(approval.headers.get('content-security-policy'),"frame-ancestors 'none'; form-action 'self' http://127.0.0.1:50820");
     const target=new URL(approval.headers.get('location'));
     assert.equal(target.origin,'http://127.0.0.1:50820');assert.equal(target.searchParams.get('state'),'test-state');assert.equal(target.searchParams.get('iss'),'https://codx-remote-api-zrider.onrender.com');
     assert.equal((await approve(ticket)).status,403);
