@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Codx Remote — seu PC no ChatGPT</title>
+  <meta name="description" content="Conecte o ChatGPT ao seu próprio computador usando MCP e um túnel seguro.">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#"><span class="brand-mark">C&gt;</span><span>Codx Remote</span></a>
+    <nav>
+      <a href="#como">Como funciona</a>
+      <a href="#instalar">Instalar</a>
+      <a href="#seguranca">Segurança</a>
+      <button class="linkbtn" id="manageTop">Manager</button>
+      <a class="btn small" href="#instalar">›_ Install</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-copy">
+        <div class="pill">PRIVATE MCP • WINDOWS • OPENAI TUNNEL</div>
+        <h1>Use seu computador<br><span>direto pelo chat</span></h1>
+        <p>Codx Remote inicia um MCP local no seu PC e conecta ao ChatGPT por um túnel seguro. Enquanto o PowerShell estiver aberto, o dispositivo fica online.</p>
+        <div class="actions">
+          <a class="btn" href="#instalar">Instalar agora <b>→</b></a>
+          <button class="btn ghost" id="manageHero">Manage device</button>
+        </div>
+        <div class="metrics">
+          <div><strong>1</strong><span>comando para iniciar</span></div>
+          <div><strong>0</strong><span>portas públicas no PC</span></div>
+          <div><strong>Ctrl+C</strong><span>desconecta na hora</span></div>
+        </div>
+      </div>
+
+      <div class="network-card">
+        <div class="clients">
+          <div class="node"><span>◉</span>ChatGPT</div>
+          <div class="node"><span>⌘</span>Codex</div>
+          <div class="node muted"><span>＋</span>MCP client</div>
+        </div>
+        <div class="lines"><i></i><i></i><i></i></div>
+        <div class="center-node">
+          <div class="logo">C&gt;</div>
+          <strong>Codx Remote</strong>
+          <small>no seu computador</small>
+          <em id="heroStatus">● Offline até iniciar</em>
+        </div>
+        <div class="lines down"><i></i><i></i><i></i></div>
+        <div class="tools">
+          <span>▣ Seus arquivos</span>
+          <span>›_ Terminal</span>
+          <span>⚙ Processos</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="como" class="section">
+      <div class="eyebrow">COMO FUNCIONA</div>
+      <h2>Seu PC continua privado</h2>
+      <p class="lead">O agente roda localmente. O túnel sai do seu PC por HTTPS até a OpenAI, então não é necessário abrir porta no roteador.</p>
+      <div class="steps">
+        <article><b>01</b><h3>Instale</h3><p>Rode um único comando no PowerShell. O instalador prepara Node.js, Desktop Commander e o cliente de túnel.</p></article>
+        <article><b>02</b><h3>Conecte</h3><p>Na primeira execução, informe seu Tunnel ID e a chave de runtime da OpenAI. A chave fica protegida localmente pelo Windows.</p></article>
+        <article><b>03</b><h3>Use no chat</h3><p>Adicione o túnel como app MCP no ChatGPT. Com o terminal aberto, o chat consegue usar as ferramentas do PC.</p></article>
+      </div>
+    </section>
+
+    <section id="instalar" class="section install">
+      <div class="eyebrow">INSTALL</div>
+      <h2>Um comando no PowerShell</h2>
+      <p class="lead">Abra o PowerShell normal e cole:</p>
+      <div class="commandbox">
+        <code id="installCommand">irm __SITE_URL__/install.ps1 | iex</code>
+        <button id="copyInstall">Copiar</button>
+      </div>
+      <div class="note">
+        <strong>Na primeira vez:</strong> o instalador pede o <code>Tunnel ID</code> e uma <code>Runtime API key</code>. Depois disso, o mesmo comando apenas inicia o Codx Remote.
+      </div>
+      <div class="actions inline">
+        <a class="btn ghost" href="https://developers.openai.com/api/docs/guides/secure-mcp-tunnels" target="_blank" rel="noreferrer">Guia do Secure MCP Tunnel</a>
+        <a class="btn ghost" href="https://chatgpt.com/plugins" target="_blank" rel="noreferrer">Abrir Plugins do ChatGPT</a>
+      </div>
+    </section>
+
+    <section id="manager" class="section manager">
+      <div class="eyebrow">MANAGER</div>
+      <h2>Controle local do dispositivo</h2>
+      <p class="lead">O painel administrativo é servido pelo próprio cliente de túnel em <code>127.0.0.1</code>. Só o seu computador consegue abrir por padrão.</p>
+      <div class="device-card">
+        <div class="device-icon">▣</div>
+        <div>
+          <strong>Este computador</strong>
+          <span id="managerHint">Inicie o Codx Remote para abrir o painel.</span>
+        </div>
+        <a class="btn small" href="http://127.0.0.1:8080/ui" target="_blank" rel="noreferrer">Abrir painel local</a>
+      </div>
+      <div class="grid2">
+        <article><h3>Status</h3><p>Online/ready, saúde do MCP, túnel e logs do processo.</p></article>
+        <article><h3>Privacidade</h3><p>O Manager fica em loopback. Não publicamos a interface administrativa na internet.</p></article>
+      </div>
+    </section>
+
+    <section id="seguranca" class="section">
+      <div class="eyebrow">SEGURANÇA</div>
+      <h2>Feito para controle explícito</h2>
+      <div class="security-grid">
+        <div>✓ Sem serviço oculto ou inicialização automática.</div>
+        <div>✓ Fechou o PowerShell ou Ctrl+C: fica offline.</div>
+        <div>✓ Nenhuma porta de entrada precisa ficar aberta.</div>
+        <div>✓ Runtime key armazenada criptografada pelo Windows.</div>
+        <div>✓ Engine local baseada no Desktop Commander open-source.</div>
+        <div>✓ Painel administrativo local em 127.0.0.1.</div>
+      </div>
+    </section>
+
+    <section class="section faq">
+      <div class="eyebrow">IMPORTANTE</div>
+      <h2>Conta do ChatGPT e uso</h2>
+      <p class="lead">O site não recebe sua senha nem faz “Login com ChatGPT”. A ligação com a sua conta acontece dentro do próprio ChatGPT quando você adiciona o MCP/Tunnel. O site apenas instala e orienta o cliente local.</p>
+    </section>
+  </main>
+
+  <footer>
+    <strong>Codx Remote</strong>
+    <span>Local-first • MCP • Windows</span>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
