@@ -108,6 +108,14 @@ async function clearSession(req,res){
   if(t)await q('DELETE FROM sessions WHERE token_hash=$1',[sha(t)]);
   res.setHeader('Set-Cookie',COOKIE+'=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0');
 }
+function browserPostAllowed(req,allowed=[BACKEND]){
+  const origin=req.get('origin');
+  if(origin){
+    try{return allowed.includes(new URL(origin).origin)}catch{return false}
+  }
+  const fetchSite=String(req.get('sec-fetch-site')||'').toLowerCase();
+  return !fetchSite || fetchSite==='same-origin' || fetchSite==='none';
+}
 async function deviceById(id){
   return (await q('SELECT * FROM devices WHERE id=$1',[id])).rows[0]||null;
 }
@@ -383,7 +391,7 @@ app.post('/setup',async(req,res)=>{
     if(req.body?.action==='pair'){
       const target=await sessionAccount(req);
       if(!target)return res.status(401).send('Entre na sua conta para vincular o computador.');
-      if(req.get('origin')!==BACKEND||String(req.body?.pairing_consent||'')!==pairingConsent(req,tokenValue))return res.status(403).send('invalid_consent');
+      if(!browserPostAllowed(req)||String(req.body?.pairing_consent||'')!==pairingConsent(req,tokenValue))return res.status(403).send('invalid_consent');
       if(!account||account.email||!setup.device_id)return res.status(403).send('Este computador já possui uma conta.');
       const sourceId=account.id;
       const used=await q('DELETE FROM setup_tokens WHERE token_hash=$1 RETURNING token_hash',[sha(tokenValue)]);
@@ -610,7 +618,7 @@ app.post('/oauth/authorize',async(req,res)=>{
     authorizationHeaders(res);
     const a=await sessionAccount(req);
     if(!a)return res.status(401).type('text/plain').send('Sua sessão expirou. Abra novamente a conexão no assistente.');
-    if(req.get('origin')!==BACKEND)return res.status(403).type('text/plain').send('invalid_origin');
+    if(!browserPostAllowed(req))return res.status(403).type('text/plain').send('invalid_origin');
     const hash=sha(String(req.body?.consent_ticket||''));
     const consent=(await q('SELECT * FROM oauth_consents WHERE token_hash=$1',[hash])).rows[0];
     if(!consent||now()>Number(consent.expires_at)||consent.account_id!==a.id||consent.session_hash!==sha(parseCookies(req)[COOKIE]))return res.status(403).type('text/plain').send('Autorização expirada. Abra novamente a conexão no assistente.');

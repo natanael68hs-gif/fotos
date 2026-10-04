@@ -176,7 +176,11 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
       for(const key of (await q('SELECT mcp_key FROM accounts')).rows)assert.equal(html.includes(key.mcp_key),false);
       return html.match(/name="consent_ticket" value="([^"]+)"/)[1];
     };
-    const approve=(ticket,i=0,extra={},origin='https://codx-remote-api-zrider.onrender.com')=>fetch(base+'/oauth/authorize',{method:'POST',redirect:'manual',headers:{Cookie:cookie(i),Origin:origin,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({consent_ticket:ticket,...extra})});
+    const approve=(ticket,i=0,extra={},origin='https://codx-remote-api-zrider.onrender.com')=>{
+      const headers={Cookie:cookie(i),'Content-Type':'application/x-www-form-urlencoded'};
+      if(origin)headers.Origin=origin;else headers['Sec-Fetch-Site']='same-origin';
+      return fetch(base+'/oauth/authorize',{method:'POST',redirect:'manual',headers,body:new URLSearchParams({consent_ticket:ticket,...extra})});
+    };
     const exchange=p=>fetch(base+'/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(p)});
     const anonymous=await (await fetch(base+authPath)).text();
     assert.match(anonymous,/Entrar para autorizar/);assert.equal(/type="(?:email|password)"/.test(anonymous),false);
@@ -188,6 +192,7 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     const ticket=await consentPage(0);
     assert.equal((await approve(ticket,1)).status,403);
     assert.equal((await approve(ticket,0,{},'https://evil.example')).status,403);
+    assert.equal((await approve(await consentPage(0),0,{},'')).status,303);
     assert.equal((await approve('invented-ticket')).status,403);
     const approval=await approve(ticket,0,{account_id:'account-1',redirect_uri:'https://evil.example',state:'tampered'});
     assert.equal(approval.status,303);
@@ -254,9 +259,14 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
       const unpaired=await (await fetch(base+setupPath)).text();assert.match(unpaired,/Já tenho conta/);
       const html=await (await fetch(base+setupPath,{headers:{Cookie:cookie}})).text();assert.match(html,/Vincular este computador/);assert.equal(/type="(?:email|password)"/.test(html),false);
       const consent=html.match(/name="pairing_consent" value="([^"]+)"/)[1];
-      const pair=(token=consent,session=cookie)=>fetch(base+'/setup',{method:'POST',redirect:'manual',headers:{Cookie:session,Origin:'https://codx-remote-api-zrider.onrender.com'},body:new URLSearchParams({action:'pair',token:setupUrl.searchParams.get('token'),pairing_consent:token})});
+      const pair=(token=consent,session=cookie,origin='https://codx-remote-api-zrider.onrender.com')=>{
+        const headers={Cookie:session};
+        if(origin)headers.Origin=origin;else headers['Sec-Fetch-Site']='same-origin';
+        return fetch(base+'/setup',{method:'POST',redirect:'manual',headers,body:new URLSearchParams({action:'pair',token:setupUrl.searchParams.get('token'),pairing_consent:token})});
+      };
       assert.equal((await pair('wrong')).status,403);assert.equal((await pair(consent,'')).status,401);
-      assert.equal((await pair()).status,303);assert.equal((await pair()).status,400);
+      assert.equal((await pair(consent,cookie,'https://evil.example')).status,403);
+      assert.equal((await pair(consent,cookie,name==='DESKTOP-ONE'?'https://codx-remote-api-zrider.onrender.com':'')).status,303);assert.equal((await pair()).status,400);
       const account=(await q('SELECT * FROM accounts')).rows;assert.equal(account.length,1);
       const device=(await q('SELECT * FROM devices WHERE id=$1',[registered.deviceId])).rows[0];assert.equal(device.account_id,account[0].id);
       const exported=await (await fetch(base+'/api/device?action=mcp_config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+registered.deviceSecret},body:JSON.stringify({deviceId:registered.deviceId})})).json();
