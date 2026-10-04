@@ -65,13 +65,27 @@ export default async function handler(req, res) {
   ]);
 
   const base = baseUrl(req);
+  let setupToken = null;
+  let authorizeUrl = base + '/dashboard';
+
+  if (!account.email) {
+    setupToken = randomToken(32);
+    await putState('state/setup/' + hash(setupToken) + '.json', {
+      accountId: account.accountId,
+      deviceId,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 30 * 60 * 1000
+    });
+    authorizeUrl = base + '/authorize?setup=' + encodeURIComponent(setupToken);
+  }
+
   return json(res, 200, {
     ok: true,
     createdAccount,
     accountSecret,
     deviceId,
     deviceSecret,
-    mcpUrl: base + '/api/mcp?key=' + encodeURIComponent(account.mcpKey),
-    manageUrl: base + '/?manage=' + encodeURIComponent(account.manageKey)
+    authorizeUrl,
+    dashboardUrl: base + '/dashboard'
   });
 }
