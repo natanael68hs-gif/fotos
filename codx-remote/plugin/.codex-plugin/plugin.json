@@ -2,7 +2,7 @@
   "interface": {
     "displayName": "Codx Remote",
     "shortDescription": "Acesse seu PC pelo chat",
-    "longDescription": "Conecte seu computador Windows autorizado ao ChatGPT e trabalhe com arquivos, pastas, PowerShell, informações do sistema e processos por meio do Codx Remote.",
+    "longDescription": "Conecte computadores Windows autorizados e trabalhe remotamente com arquivos, pastas, PowerShell, informações do sistema e processos.",
     "developerName": "Codx Remote",
     "category": "Developer Tools",
     "capabilities": [
@@ -21,11 +21,12 @@
     ],
     "brandColor": "#080A0E",
     "logo": "./assets/codx-icon-0.9.2.png",
-    "composerIcon": "./assets/codx-icon-0.9.2.png"
+    "composerIcon": "./assets/codx-icon-0.9.2.png",
+    "supportURL": "https://codx-remote.onrender.com/support"
   },
   "name": "codx-remote",
-  "version": "0.9.6",
-  "description": "Acesse computadores Windows autorizados pelo ChatGPT para trabalhar com arquivos, pastas, PowerShell e processos.",
+  "version": "0.9.7",
+  "description": "Acesse computadores Windows autorizados para trabalhar com arquivos, pastas, PowerShell, processos e informações do sistema.",
   "author": {
     "name": "Codx Remote",
     "url": "https://codx-remote.onrender.com"
