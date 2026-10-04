@@ -10,7 +10,7 @@ import {
 } from './utils.mjs';
 
 const PORT=Number(process.env.PORT||10000);
-const SITE=(process.env.PUBLIC_SITE_URL||'https://codx-remote-zrider.vercel.app').replace(/\/$/,'');
+const SITE=(process.env.PUBLIC_SITE_URL||'https://codx-remote.onrender.com').replace(/\/$/,'');
 const BACKEND=(process.env.PUBLIC_BACKEND_URL||'https://codx-remote-api-zrider.onrender.com').replace(/\/$/,'');
 const MARKETING_SITE=(process.env.MARKETING_SITE_URL||'https://codx-remote.onrender.com').replace(/\/$/,'');
 const RESOURCE=BACKEND+'/mcp';
@@ -132,6 +132,8 @@ async function accountForMcp(req){
   if(bt){
     const s=(await q('SELECT * FROM oauth_access WHERE token_hash=$1',[sha(bt)])).rows[0];
     if(s && now()<Number(s.expires_at||0) && s.resource===RESOURCE)return getAccount(s.account_id);
+    // Personal MCP keys are sent automatically by clients, without OAuth prompts.
+    return accountByMcpKey(bt);
   }
   const key=String(req.query.key||'');
   if(key)return accountByMcpKey(key);
@@ -441,6 +443,30 @@ app.post('/login',async(req,res)=>{
 
 app.post('/logout',async(req,res)=>{await clearSession(req,res);res.redirect(302,'/login')});
 
+app.get('/dashboard/mcp-config',async(req,res)=>{
+  const a=await sessionAccount(req);
+  if(!a)return json(res,401,{error:'unauthorized'});
+  if(req.query.format==='toml'){
+    res.setHeader('Content-Disposition','attachment; filename="codx-remote-config.toml"');
+    return res.type('text/plain').send('[mcp_servers.codxRemotePersonal]\nurl = '+JSON.stringify(RESOURCE)+
+      '\nhttp_headers = { Authorization = '+JSON.stringify('Bearer '+a.mcp_key)+' }\n');
+  }
+  res.setHeader('Content-Disposition','attachment; filename="codx-remote-mcp.json"');
+  return json(res,200,{mcpServers:{codxRemote:{
+    type:'http',url:RESOURCE,headers:{Authorization:'Bearer '+a.mcp_key}
+  }}});
+});
+
+app.post('/dashboard/mcp-key/rotate',async(req,res)=>{
+  const a=await sessionAccount(req);
+  if(!a)return json(res,401,{error:'unauthorized'});
+  // Browsers send Origin for POST; reject requests from other sites.
+  if(![BACKEND,SITE].includes(req.get('origin')))return json(res,403,{error:'invalid_origin'});
+  const key=token(32);
+  await q('UPDATE accounts SET mcp_key=$1,mcp_key_hash=$2 WHERE id=$3',[key,sha(key),a.id]);
+  return res.redirect(303,'/dashboard');
+});
+
 app.get('/dashboard',async(req,res)=>{
   let a=await sessionAccount(req);
   if(!a)return res.redirect(302,'/login');
@@ -448,7 +474,7 @@ app.get('/dashboard',async(req,res)=>{
   const devices=await listDevices(a.id);
   const pct=Math.min(100,Math.round(Number(a.monthly_tool_calls||0)/Math.max(1,Number(a.monthly_limit||500))*100));
   const rows=devices.map(d=>'<div class="device-card"><div><h3>'+esc(d.deviceName)+' <span class="'+(d.online?'status-online':'status-offline')+'">'+(d.online?'● Online':'○ Offline')+'</span></h3><div class="device-meta">ID: '+esc(d.deviceId)+'<br>Chamadas: '+d.toolCalls+' • Último sinal: '+(d.lastSeen?new Date(d.lastSeen).toLocaleString('pt-BR'):'-')+'</div></div><div class="device-actions">'+(d.revoked?'<span class="status-offline">Revogado</span>':'<form method="post" action="/dashboard/device" style="display:flex;gap:8px;flex-wrap:wrap"><input type="hidden" name="deviceId" value="'+esc(d.deviceId)+'"><button class="btn secondary small" name="action" value="disconnect">Desconectar</button><button class="btn danger small" name="action" value="revoke">Revogar</button></form>')+'</div></div>').join('');
-  const body='<main class="container dashboard"><div class="dash-head"><div><span class="eyebrow"><span class="live-dot"></span> CONTA ATIVA</span><h1>Olá, '+esc(a.name||a.email?.split('@')[0]||'Codx User')+'</h1><div class="dash-meta">'+esc(a.email||'')+' • '+esc(a.plan||'Free')+'</div></div><form method="post" action="/logout"><button class="btn secondary small">Sair</button></form></div><div class="dash-grid"><section class="dash-card"><div class="dash-label">Uso mensal</div><div class="dash-value">'+Number(a.monthly_tool_calls||0)+' / '+Number(a.monthly_limit||500)+'</div><div class="usage-bar"><i style="width:'+pct+'%"></i></div></section><section class="dash-card"><div class="dash-label">Total histórico</div><div class="dash-value">'+Number(a.total_tool_calls||0)+'</div><div class="dash-meta">chamadas MCP</div></section></div><div class="devices-title"><div class="kicker">DEVICES</div><h2>Seus computadores</h2><p class="section-lead">Enquanto o agente estiver aberto, o dispositivo aparece como Online.</p></div><div class="device-list">'+(rows||'<div class="dash-card">Nenhum dispositivo conectado.</div>')+'</div></main>';
+  const body='<main class="container dashboard"><div class="dash-head"><div><span class="eyebrow"><span class="live-dot"></span> CONTA ATIVA</span><h1>Olá, '+esc(a.name||a.email?.split('@')[0]||'Codx User')+'</h1><div class="dash-meta">'+esc(a.email||'')+' • '+esc(a.plan||'Free')+'</div></div><form method="post" action="/logout"><button class="btn secondary small">Sair</button></form></div><div class="dash-grid"><section class="dash-card"><div class="dash-label">Uso mensal</div><div class="dash-value">'+Number(a.monthly_tool_calls||0)+' / '+Number(a.monthly_limit||500)+'</div><div class="usage-bar"><i style="width:'+pct+'%"></i></div></section><section class="dash-card"><div class="dash-label">Total histórico</div><div class="dash-value">'+Number(a.total_tool_calls||0)+'</div><div class="dash-meta">chamadas MCP</div></section></div><div class="devices-title"><div class="kicker">DEVICES</div><h2>Seus computadores</h2><p class="section-lead">Enquanto o agente estiver aberto, o dispositivo aparece como Online.</p></div><div class="device-list">'+(rows||'<div class="dash-card">Nenhum dispositivo conectado.</div>')+'</div><section class="dash-card" style="margin-top:24px"><h2>Conexão automática no Codex</h2><p>Configure uma vez com sua chave pessoal para conectar sem abrir o login OAuth. Ela funciona até você trocar a chave.</p><a class="btn small" href="/dashboard/mcp-config?format=toml">Baixar configuração do Codex</a> <a class="btn secondary small" href="/dashboard/mcp-config">Baixar configuração MCP</a><p>No Codex, adicione o conteúdo do arquivo TOML ao seu config.toml e reinicie o aplicativo. Para outros clientes, use a configuração MCP JSON. Desative a conexão OAuth anterior para evitar ferramentas duplicadas. Não compartilhe esse arquivo: ele permite acesso aos seus computadores.</p><form method="post" action="/dashboard/mcp-key/rotate"><button class="btn secondary small">Trocar chave e invalidar configurações anteriores</button></form></section></main>';
   res.type('html').send(page('Dashboard',body,'<a class="btn small" href="/install">+ Conectar PC</a>'));
 });
 
@@ -604,4 +630,4 @@ app.all('/mcp',mcpHandler);
 app.all('/api/mcp',mcpHandler);
 
 await initDb();
-app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend 0.7.1 listening on',PORT));
+export const server=app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend listening on',server.address().port));

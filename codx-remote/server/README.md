@@ -4,12 +4,38 @@ Persistent backend for Codx Remote.
 
 ## Architecture
 
-Vercel hosts the public website.
+Render Static Site hosts the public website.
 Render runs the persistent Node.js API/MCP backend.
 Render Postgres stores accounts, devices, sessions, commands, usage and OAuth state.
 
 Public website:
-https://codx-remote-zrider.vercel.app
+https://codx-remote.onrender.com
+
+## Connect without repeated OAuth login
+
+Sign in to the backend dashboard once at
+https://codx-remote-api-zrider.onrender.com/dashboard and choose
+**Baixar configuração do Codex**. Add that TOML snippet to your personal
+`~/.codex/config.toml` and restart Codex. Disable the plugin's previous OAuth
+MCP connection to avoid duplicate tools. Other MCP clients can download the
+JSON configuration using **Baixar configuração MCP** instead.
+
+The configuration sends the account's permanent MCP key as an Authorization
+Bearer header. It does not expire and works until the key is rotated. No key
+is embedded in the shared plugin or committed to the repository. Treat the
+download as a credential and keep it in your personal configuration only.
+The dashboard's **Trocar chave** button invalidates earlier configurations;
+download and install the new configuration after rotating.
+
+OAuth connections and existing query-key clients remain supported. Anonymous
+requests remain rejected, and each key can only access its account's devices.
+The JSON download is a legacy HTTP-client configuration; portable plugin
+`mcp.json` continues to use the standard `streamable-http` transport.
+
+Production requires `DATABASE_URL` so accounts and keys persist across deploys.
+The in-memory database is only suitable for local tests.
+
+Run authentication integration tests with `npm test` in this directory.
 
 ## Render Blueprint
 
@@ -30,4 +56,4 @@ The web service expects `DATABASE_URL` from Render Postgres and exposes:
 - `GET|POST /api/mcp`
 - OAuth discovery and OAuth 2.1/PKCE endpoints.
 
-After the Render URL is known, Vercel should proxy the API/OAuth paths to the Render service.
+The public static site links directly to the Render backend for the dashboard and OAuth.
