@@ -1,0 +1,20 @@
+{
+  "name": "codx-remote-marketplace",
+  "interface": {
+    "displayName": "Codx Remote"
+  },
+  "plugins": [
+    {
+      "name": "codx-remote",
+      "source": {
+        "source": "local",
+        "path": "./codx-remote/plugin"
+      },
+      "policy": {
+        "installation": "INSTALLED_BY_DEFAULT",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}
