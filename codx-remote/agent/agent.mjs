@@ -221,6 +221,7 @@ function banner(config, authorized) {
   console.log('[OK] Device: ' + config.deviceName);
   console.log('[OK] Status: Online');
   console.log(authorized ? '[OK] Account: Authorized' : '[..] Account: Waiting for authorization in browser');
+  if (!authorized) console.log('[..] Authorization page: Render secure setup');
   console.log('');
   console.log('Dashboard opened in your browser.');
   console.log('Keep this PowerShell window open.');
@@ -282,7 +283,7 @@ async function main() {
       const setup = authorizeUrl ? { url: authorizeUrl } : await setupUrl(config);
       await openUrl(setup.url);
     } catch {
-      await openUrl(SERVER + '/register');
+      await openUrl(SERVER + '/setup');
     }
   } else {
     await openUrl(SERVER + '/dashboard');
