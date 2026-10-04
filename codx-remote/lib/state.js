@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { put, get, list, del } from '@vercel/blob';
+import { put, list, del } from '@vercel/blob';
 
 const ACCESS = 'public';
 
@@ -58,11 +58,12 @@ export async function putState(pathname, value) {
 
 export async function getState(pathname) {
   try {
-    const result = await get(pathname, { access: ACCESS, useCache: false });
-    if (!result || result.statusCode !== 200) return null;
-    const chunks = [];
-    for await (const chunk of result.stream) chunks.push(Buffer.from(chunk));
-    return decryptObject(Buffer.concat(chunks).toString('utf8'));
+    const page = await list({ prefix: pathname, limit: 10 });
+    const blob = page.blobs.find(item => item.pathname === pathname);
+    if (!blob) return null;
+    const response = await fetch(blob.url, { cache: 'no-store' });
+    if (!response.ok) return null;
+    return decryptObject(await response.text());
   } catch {
     return null;
   }
