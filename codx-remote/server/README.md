@@ -37,6 +37,25 @@ The in-memory database is only suitable for local tests.
 
 Run authentication integration tests with `npm test` in this directory.
 
+## Windows installer for ChatGPT
+
+Run `irm https://codx-remote.onrender.com/install.ps1 | iex` in PowerShell.
+The installer uses `%USERPROFILE%\.codx-server-remote` (for example,
+`C:\Users\Usuario\.codx-server-remote`), protects its credentials with a
+user-specific ACL, and preserves the old `%LOCALAPPDATA%\CodxRemote` directory.
+It downloads the agent, writes start/stop scripts and logs, and adds a per-user
+startup shortcut. The agent runs in the background; PowerShell can be closed.
+
+After the account/device is authorized, the agent generates `mcp.json` and
+opens the existing private ChatGPT plugin during installation. ChatGPT must
+still install/connect that plugin and authorize the account through its own
+interface. Creating a local directory cannot grant a normal ChatGPT chat MCP
+tools. Startup does not reopen the plugin once the device is already authorized.
+
+The backend and static site serve the same installer file. Stop the agent with
+the generated `stop.ps1`; remove the `Codx Remote.lnk` startup shortcut to
+disable automatic startup. Rerunning the installer updates the managed agent.
+
 ## Render Blueprint
 
 The repository root contains `render.yaml`.

@@ -42,6 +42,27 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     assert.equal((await rpc('oauth-test-token')).status,200);
     assert.equal((await fetch(base+'/mcp?key='+keys[0])).status,200);
   });
+  await t.test('device configuration requires an authorized, non-revoked device',async()=>{
+    const deviceConfig=secret=>fetch(base+'/api/device?action=mcp_config',{
+      method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+secret},
+      body:JSON.stringify({deviceId:'device-0'})
+    });
+    assert.equal((await deviceConfig('wrong-secret')).status,401);
+    assert.equal((await deviceConfig('device-secret-0')).status,403);
+    await q('UPDATE accounts SET email=$1 WHERE id=$2',['account-a@example.test','account-0']);
+    const response=await deviceConfig('device-secret-0');
+    assert.equal(response.status,200);
+    assert.equal((await response.json()).config.mcpServers.codxRemote.headers.Authorization,'Bearer '+keys[0]);
+    await q('UPDATE devices SET revoked=TRUE WHERE id=$1',['device-0']);
+    assert.equal((await deviceConfig('device-secret-0')).status,401);
+    await q('UPDATE devices SET revoked=FALSE WHERE id=$1',['device-0']);
+  });
+  await t.test('backend serves the same installer as the public static site',async()=>{
+    const {readFile}=await import('node:fs/promises');
+    const response=await fetch(base+'/install.ps1');
+    assert.equal(response.status,200);
+    assert.equal(await response.text(),await readFile(new URL('../public/install.ps1',import.meta.url),'utf8'));
+  });
   await t.test('configuration download requires a valid dashboard session',async()=>{
     assert.equal((await fetch(base+'/dashboard/mcp-config')).status,401);
     await q('INSERT INTO sessions(token_hash,account_id,expires_at,created_at) VALUES($1,$2,$3,$4)',
