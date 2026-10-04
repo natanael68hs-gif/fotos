@@ -1,0 +1,18 @@
+interface:
+  display_name: "Codx Remote"
+  short_description: "Acesse seu PC pelo chat"
+  default_prompt: "Liste meus dispositivos Codx Remote conectados."
+
+policy:
+  products:
+    - CHAT
+    - CODEX
+  allow_implicit_invocation: true
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "codxRemote"
+      description: "Acesse computadores Windows autorizados pelo Codx Remote."
+      transport: "streamable_http"
+      url: "https://codx-remote-api-zrider.onrender.com/mcp"
