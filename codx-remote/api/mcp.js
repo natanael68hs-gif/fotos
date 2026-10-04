@@ -7,6 +7,18 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 const tools = [
   {
+    name: 'list_devices',
+    description: 'List Codx Remote devices and their online/offline status.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  },
+  {
+    name: 'who_am_i',
+    description: 'Show Codx Remote account usage and connected device summary.',
+    inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+    annotations: { readOnlyHint: true, destructiveHint: false }
+  },
+  {
     name: 'system_info',
     description: 'Read basic system information from the connected Windows PC.',
     inputSchema: { type: 'object', properties: { deviceId: { type: 'string' } }, additionalProperties: false },
@@ -164,8 +176,24 @@ export default async function handler(req, res) {
         deviceId: d.deviceId,
         deviceName: d.deviceName,
         online: d.online,
-        lastSeen: d.lastSeen
+        lastSeen: d.lastSeen,
+        toolCalls: Number(d.toolCalls || 0)
       })), null, 2) }]
+    }));
+  }
+
+  if (name === 'who_am_i') {
+    const devices = await loadDevices(account);
+    return json(res, 200, result(msg.id, {
+      content: [{ type: 'text', text: JSON.stringify({
+        accountId: account.accountId,
+        totalToolCalls: Number(account.totalToolCalls || 0),
+        devices: devices.map(d => ({
+          deviceId: d.deviceId,
+          deviceName: d.deviceName,
+          online: d.online
+        }))
+      }, null, 2) }]
     }));
   }
 
