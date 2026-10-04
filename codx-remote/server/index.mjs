@@ -157,6 +157,8 @@ const MCP_TOOLS=[
 
 MCP_TOOLS.push({name:'show_activity',title:'Atividade Codx Remote',description:'Show the live, branded Codx Remote activity card with online devices and running remote operations. Use when the user wants to monitor computer work. Read-only and does not consume remote quota.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false},_meta:ACTIVITY_META});
 for(const tool of MCP_TOOLS){
+  // Account summaries stay within this service; remote tools reach the user's PC.
+  tool.annotations.openWorldHint=!['list_devices','who_am_i','show_activity'].includes(tool.name);
   tool.icons=[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}];
   tool._meta={...tool._meta,'openai/toolInvocation/invoking':'Codx Remote · '+(tool.name==='run_powershell'?'Executando no computador…':'Consultando seu computador…'),'openai/toolInvocation/invoked':'Codx Remote · Concluído'};
 }
