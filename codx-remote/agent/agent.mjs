@@ -55,7 +55,8 @@ async function register(config) {
     deviceSecret: result.deviceSecret,
     deviceName: os.hostname(),
     version: VERSION,
-    dashboardUrl: result.dashboardUrl || (SERVER + '/dashboard')
+    dashboardUrl: result.dashboardUrl || (SERVER + '/dashboard'),
+    credentialsMigrated: true
   };
 
   await saveConfig(next);
@@ -74,6 +75,14 @@ async function heartbeat(config) {
     method: 'POST',
     headers: authHeaders(config),
     body: JSON.stringify({ deviceId: config.deviceId, agentVersion: VERSION })
+  });
+}
+
+async function rotateLegacyLinks(config) {
+  return request(SERVER + '/api/device?action=rotate_links', {
+    method: 'POST',
+    headers: authHeaders(config),
+    body: JSON.stringify({ deviceId: config.deviceId })
   });
 }
 
@@ -256,6 +265,17 @@ async function main() {
   }
 
   if (hb.disconnect) process.exit(0);
+
+  if (!config.credentialsMigrated) {
+    try {
+      await rotateLegacyLinks(config);
+      config.credentialsMigrated = true;
+      delete config.mcpUrl;
+      delete config.manageUrl;
+      await saveConfig(config);
+      console.log('[OK] Legacy links protected.');
+    } catch {}
+  }
 
   if (!hb.authorized) {
     try {
