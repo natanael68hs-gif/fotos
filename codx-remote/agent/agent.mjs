@@ -349,13 +349,6 @@ async function main() {
 
         if (status.disconnect) {
           console.log('[REMOTE] Disconnect requested from dashboard.');
-          try {
-            await request(SERVER + '/api/device?action=disconnect_ack', {
-              method: 'POST',
-              headers: authHeaders(config),
-              body: JSON.stringify({ deviceId: config.deviceId })
-            });
-          } catch {}
           stopping = true;
           break;
         }

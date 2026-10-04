@@ -255,12 +255,9 @@ app.post('/api/device',async(req,res)=>{
     if(action==='heartbeat'){
       const account=await getAccount(d.account_id);
       const disconnect=!!d.disconnect_requested;
-      await q('UPDATE devices SET last_seen=$1 WHERE id=$2',[now(),deviceId]);
+      if(disconnect)await q('UPDATE devices SET last_seen=0,disconnect_requested=FALSE WHERE id=$1 AND disconnect_requested=TRUE',[deviceId]);
+      else await q('UPDATE devices SET last_seen=$1 WHERE id=$2 AND disconnect_requested=FALSE',[now(),deviceId]);
       return json(res,200,{ok:true,revoked:false,disconnect,authorized:!!account?.email});
-    }
-    if(action==='disconnect_ack'){
-      await q('UPDATE devices SET disconnect_requested=FALSE,last_seen=0 WHERE id=$1 AND disconnect_requested=TRUE',[deviceId]);
-      return json(res,200,{ok:true});
     }
     if(action==='setup_url'){
       const account=await getAccount(d.account_id);
