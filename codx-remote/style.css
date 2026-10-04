@@ -55,3 +55,7 @@ footer{border-top:1px solid #ffffff0d;padding:30px 0;color:#758399}.footer-inner
 @keyframes pulseRing{0%,100%{opacity:.25;transform:scale(.95)}50%{opacity:.75;transform:scale(1.05)}}@keyframes ripple{to{transform:scale(4);opacity:0}}
 @media(max-width:900px){.navlinks a:not(.btn){display:none}.hero{grid-template-columns:1fr;padding-top:65px}.flow-card{height:480px}.cards3,.providers,.dash-grid{grid-template-columns:1fr}.device-row{grid-template-columns:1fr}.device-actions{justify-content:flex-start}}
 @media(max-width:570px){.wrap{width:min(100% - 24px,1180px)}.hero h1{font-size:46px}.flow-card{height:440px}.flow-node.client1{left:18px}.flow-node.client3{right:18px}.flow-node.tool1{left:14px}.flow-node.tool3{right:14px}.stats{gap:20px}.command{align-items:stretch;flex-direction:column}.command button{width:100%}}
+
+.brand-logo{width:42px;height:42px;object-fit:contain;filter:drop-shadow(0 0 14px #4f8cff66);transition:.25s transform,.25s filter}.brand:hover .brand-logo{transform:rotate(-4deg) scale(1.08);filter:drop-shadow(0 0 20px #60d5ffaa)}
+.core-logo{width:78px;height:78px;object-fit:contain;margin-bottom:6px;filter:drop-shadow(0 0 24px #55a0ff99);animation:coreFloat 3.4s ease-in-out infinite}
+@keyframes coreFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-5px) scale(1.04)}}
