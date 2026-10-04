@@ -407,6 +407,8 @@ app.post('/setup',async(req,res)=>{
   }
 });
 
+app.get('/',(_req,res)=>res.type('html').send(page('Codx Remote','<main class="auth"><div class="card"><span class="badge"><span class="dot"></span> CODX REMOTE</span><h1>Conta Codx Remote</h1><p class="muted">Crie sua conta, entre no dashboard e gerencie seus computadores.</p><div style="display:grid;gap:10px;margin-top:22px"><a class="btn" href="/register">Criar conta</a><a class="btn ghost" href="/login">Entrar</a><a class="btn ghost" href="'+SITE+'/install">Instalar no Windows</a></div></div></main>')));
+
 app.get('/register',(req,res)=>res.type('html').send(page('Criar conta','<main class="auth"><form class="card" method="post" action="/register"><span class="badge"><span class="dot"></span> CODX REMOTE</span><h1>Criar conta</h1><p class="muted">Crie sua conta para gerenciar computadores e uso do Codx Remote.</p><div class="field"><label>Nome</label><input name="name" required></div><div class="field"><label>E-mail</label><input type="email" name="email" required></div><div class="field"><label>Senha</label><input type="password" name="password" minlength="10" required></div><button class="btn">Criar conta</button><p class="muted" style="margin-top:16px">Já tem conta? <a href="/login" style="color:#8eb5ff">Entrar</a></p></form></main>')));
 
 app.post('/register',async(req,res)=>{
