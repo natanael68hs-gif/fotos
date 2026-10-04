@@ -113,7 +113,7 @@ function browserPostAllowed(req,allowed=[BACKEND]){
   if(origin){
     try{
       const actual=new URL(origin).origin;
-      const host=String(req.get('host')||'').toLowerCase();
+      const host=String(req.get('x-forwarded-host')||req.get('host')||'').split(',')[0].trim().toLowerCase();
       const forwardedProto=String(req.get('x-forwarded-proto')||req.protocol||'https').split(',')[0].trim()||'https';
       const requestOrigin=host?forwardedProto+'://'+host:'';
       return allowed.includes(actual)||actual===requestOrigin;
@@ -141,6 +141,7 @@ async function listDevices(accountId){
   return rows.map(d=>({
     deviceId:d.id,deviceName:d.device_name,
     online:!d.revoked && now()-Number(d.last_seen||0)<15000,
+    disconnecting:!!d.disconnect_requested,
     lastSeen:Number(d.last_seen||0),revoked:!!d.revoked,toolCalls:Number(d.tool_calls||0)
   }));
 }
@@ -254,8 +255,12 @@ app.post('/api/device',async(req,res)=>{
     if(action==='heartbeat'){
       const account=await getAccount(d.account_id);
       const disconnect=!!d.disconnect_requested;
-      await q('UPDATE devices SET last_seen=$1,disconnect_requested=FALSE WHERE id=$2',[now(),deviceId]);
+      await q('UPDATE devices SET last_seen=$1 WHERE id=$2',[now(),deviceId]);
       return json(res,200,{ok:true,revoked:false,disconnect,authorized:!!account?.email});
+    }
+    if(action==='disconnect_ack'){
+      await q('UPDATE devices SET disconnect_requested=FALSE,last_seen=0 WHERE id=$1 AND disconnect_requested=TRUE',[deviceId]);
+      return json(res,200,{ok:true});
     }
     if(action==='setup_url'){
       const account=await getAccount(d.account_id);
@@ -344,7 +349,7 @@ app.post('/api/dashboard-action',async(req,res)=>{
   try{
     const a=await sessionAccount(req);
     if(!a)return json(res,401,{error:'unauthorized'});
-    if(![BACKEND,SITE].includes(req.get('origin')))return json(res,403,{error:'invalid_origin'});
+    if(!browserPostAllowed(req,[BACKEND,SITE]))return json(res,403,{error:'invalid_origin'});
     const id=String(req.body?.deviceId||''),action=String(req.body?.action||'');
     const d=(await q('SELECT * FROM devices WHERE id=$1 AND account_id=$2',[id,a.id])).rows[0];
     if(!d)return json(res,404,{error:'device_not_found'});
@@ -354,6 +359,10 @@ app.post('/api/dashboard-action',async(req,res)=>{
     }
     if(action==='revoke'){
       await q('UPDATE devices SET revoked=TRUE WHERE id=$1',[id]);
+      return json(res,200,{ok:true});
+    }
+    if(action==='restore'){
+      await q('UPDATE devices SET revoked=FALSE,disconnect_requested=FALSE,last_seen=0 WHERE id=$1',[id]);
       return json(res,200,{ok:true});
     }
     if(action==='rename'){
