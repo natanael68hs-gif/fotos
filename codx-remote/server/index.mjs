@@ -1,7 +1,7 @@
 import http from 'node:http';
 import express from 'express';
 import { WebSocketServer } from 'ws';
-import { db } from './db.mjs';
+import { db, sha } from './db.mjs';
 import {
   registerDevice,
   managerSnapshot,
@@ -87,9 +87,7 @@ app.get('/manage', (req, res) => {
 
 app.get('/mcp', (req, res) => {
   const key = String(req.query.key || '');
-  const account = db.prepare('SELECT id FROM accounts WHERE mcp_key_hash=?').get(
-    (await import('./db.mjs')).sha(key)
-  );
+  const account = db.prepare('SELECT id FROM accounts WHERE mcp_key_hash=?').get(sha(key));
   if (!account) return sendJson(res, 401, { error: 'invalid_key' });
   sendJson(res, 200, { name: 'Codx Remote MCP', status: 'ready' });
 });
