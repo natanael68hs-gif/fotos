@@ -6,6 +6,7 @@
     { "source": "/authorize", "destination": "/authorize.html" },
     { "source": "/dashboard", "destination": "/dashboard.html" },
 
+    { "source": "/api/backend-health", "destination": "https://codx-remote-api-zrider.onrender.com/health" },
     { "source": "/api/register", "destination": "https://codx-remote-api-zrider.onrender.com/api/register" },
     { "source": "/api/device", "destination": "https://codx-remote-api-zrider.onrender.com/api/device" },
     { "source": "/api/auth", "destination": "https://codx-remote-api-zrider.onrender.com/api/auth" },
