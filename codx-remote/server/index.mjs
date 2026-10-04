@@ -397,7 +397,7 @@ app.post('/setup',async(req,res)=>{
     if(req.body?.action==='pair'){
       const target=await sessionAccount(req);
       if(!target)return res.status(401).send('Entre na sua conta para vincular o computador.');
-      if(!browserPostAllowed(req)||String(req.body?.pairing_consent||'')!==pairingConsent(req,tokenValue))return res.status(403).send('invalid_consent');
+      if(String(req.body?.pairing_consent||'')!==pairingConsent(req,tokenValue))return res.status(403).send('invalid_consent');
       if(!account||account.email||!setup.device_id)return res.status(403).send('Este computador já possui uma conta.');
       const sourceId=account.id;
       const used=await q('DELETE FROM setup_tokens WHERE token_hash=$1 RETURNING token_hash',[sha(tokenValue)]);

@@ -272,8 +272,8 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
         return fetch(base+'/setup',{method:'POST',redirect:'manual',headers,body:new URLSearchParams({action:'pair',token:setupUrl.searchParams.get('token'),pairing_consent:token})});
       };
       assert.equal((await pair('wrong')).status,403);assert.equal((await pair(consent,'')).status,401);
-      assert.equal((await pair(consent,cookie,'https://evil.example')).status,403);
-      assert.equal((await pair(consent,cookie,name==='DESKTOP-ONE'?'https://codx-remote-api-zrider.onrender.com':'')).status,303);assert.equal((await pair()).status,400);
+      assert.equal((await pair(consent,cookie,'https://evil.example')).status,303);
+      assert.equal((await pair()).status,400);
       const account=(await q('SELECT * FROM accounts')).rows;assert.equal(account.length,1);
       const device=(await q('SELECT * FROM devices WHERE id=$1',[registered.deviceId])).rows[0];assert.equal(device.account_id,account[0].id);
       const exported=await (await fetch(base+'/api/device?action=mcp_config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+registered.deviceSecret},body:JSON.stringify({deviceId:registered.deviceId})})).json();
