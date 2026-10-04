@@ -495,6 +495,13 @@ app.post('/dashboard/device',async(req,res)=>{
   res.redirect(302,'/dashboard');
 });
 
+app.get('/.well-known/openai-apps-challenge',(_req,res)=>{
+  const challenge=String(process.env.OPENAI_APPS_CHALLENGE||'').trim();
+  if(!challenge)return res.status(404).type('text/plain').send('not configured');
+  res.setHeader('Cache-Control','no-store');
+  return res.status(200).type('text/plain; charset=utf-8').send(challenge);
+});
+
 app.get('/.well-known/oauth-protected-resource',(_req,res)=>json(res,200,{
   resource:RESOURCE,authorization_servers:[BACKEND],scopes_supported:['codx.remote'],
   bearer_methods_supported:['header'],resource_name:'Codx Remote'
