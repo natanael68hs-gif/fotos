@@ -156,11 +156,13 @@ const MCP_TOOLS=[
 ];
 
 MCP_TOOLS.push({name:'show_activity',title:'Atividade Codx Remote',description:'Show the live, branded Codx Remote activity card with online devices and running remote operations. Use when the user wants to monitor computer work. Read-only and does not consume remote quota.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false},_meta:ACTIVITY_META});
+const CODX_OAUTH=[{type:'oauth2',scopes:['codx.remote']}];
 for(const tool of MCP_TOOLS){
   // Account summaries stay within this service; remote tools reach the user's PC.
   tool.annotations.openWorldHint=!['list_devices','who_am_i','show_activity'].includes(tool.name);
   tool.icons=[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}];
-  tool._meta={...tool._meta,'openai/toolInvocation/invoking':'Codx Remote · '+(tool.name==='run_powershell'?'Executando no computador…':'Consultando seu computador…'),'openai/toolInvocation/invoked':'Codx Remote · Concluído'};
+  tool.securitySchemes=CODX_OAUTH;
+  tool._meta={...tool._meta,securitySchemes:CODX_OAUTH,'openai/toolInvocation/invoking':'Codx Remote · '+(tool.name==='run_powershell'?'Executando no computador…':'Consultando seu computador…'),'openai/toolInvocation/invoked':'Codx Remote · Concluído'};
 }
 async function activitySnapshot(accountId){
   const devices=await listDevices(accountId);
@@ -181,7 +183,7 @@ app.get('/agent/agent.mjs',async(_req,res)=>{
 app.get('/install.ps1',(_req,res)=>res.type('text/plain; charset=utf-8').sendFile(path.join(PUBLIC_DIR,'install.ps1')));
 
 app.get('/health',async(_req,res)=>{
-  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.9.0',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
+  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.9.3',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
   catch(e){json(res,500,{ok:false,error:String(e.message||e)})}
 });
 
@@ -198,7 +200,7 @@ app.get('/selftest',async(_req,res)=>{
     const row=(await q('SELECT id,device_name FROM devices WHERE id=$1 AND account_id=$2',[deviceId,account.id])).rows[0];
     const ok=!!row && row.device_name==='CODX-SELFTEST';
     await q('DELETE FROM accounts WHERE id=$1',[account.id]);
-    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.9.0'});
+    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.9.3'});
   }catch(e){
     if(account?.id){try{await q('DELETE FROM accounts WHERE id=$1',[account.id])}catch{}}
     console.error(e);
@@ -590,26 +592,29 @@ app.post('/oauth/token',async(req,res)=>{
 async function mcpHandler(req,res){
   try{
     const account=await accountForMcp(req);
-    if(!account){
-      res.setHeader('WWW-Authenticate','Bearer resource_metadata="'+BACKEND+'/.well-known/oauth-protected-resource", scope="codx.remote"');
-      return json(res,401,rpcError(req.body?.id,-32001,'Codx Remote authentication required.'));
-    }
-    await normalizeUsage(account);
-    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.9.0'});
+    if(account)await normalizeUsage(account);
+    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.9.3',authentication:account?'connected':'required'});
     const msg=req.body||{};
     if(msg.method==='notifications/initialized')return json(res,204,null);
     if(msg.method==='initialize'){
-      const connectionId=await connectionFor(req,account,msg.params?.clientInfo||{name:'Cliente MCP'});
-      res.setHeader('Mcp-Session-Id',await createMcpSession(account.id,connectionId));
-      return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false},resources:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.9.0',icons:[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}]}}));
+      if(account){
+        const connectionId=await connectionFor(req,account,msg.params?.clientInfo||{name:'Cliente MCP'});
+        res.setHeader('Mcp-Session-Id',await createMcpSession(account.id,connectionId));
+      }
+      return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false},resources:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.9.3',icons:[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}]}}));
     }
-    await connectionFor(req,account);
+    if(account)await connectionFor(req,account);
     if(msg.method==='resources/list')return json(res,200,rpcResult(msg.id,{resources:[{uri:ACTIVITY_URI,name:'Codx Remote Activity',mimeType:'text/html;profile=mcp-app'}]}));
     if(msg.method==='resources/read')return json(res,200,msg.params?.uri===ACTIVITY_URI?rpcResult(msg.id,{contents:[activityResource(BACKEND)]}):rpcError(msg.id,-32002,'Resource not found'));
 
     if(msg.method==='ping')return json(res,200,rpcResult(msg.id,{}));
     if(msg.method==='tools/list')return json(res,200,rpcResult(msg.id,{tools:MCP_TOOLS}));
     if(msg.method!=='tools/call')return json(res,200,rpcError(msg.id,-32601,'Method not found'));
+    if(!account){
+      const challenge='Bearer resource_metadata="'+BACKEND+'/.well-known/oauth-protected-resource", scope="codx.remote", error="invalid_token", error_description="Connect your Codx Remote account to continue"';
+      res.setHeader('WWW-Authenticate',challenge);
+      return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:'Authentication required. Connect your Codx Remote account to continue.'}],_meta:{'mcp/www_authenticate':[challenge]},isError:true}));
+    }
     const name=String(msg.params?.name||''),args={...(msg.params?.arguments||{})};
     if(name==='show_activity'){const snapshot=await activitySnapshot(account.id);return json(res,200,rpcResult(msg.id,{structuredContent:snapshot,content:[{type:'text',text:JSON.stringify(snapshot)}]}))}
     if(name==='list_devices')return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:JSON.stringify(await listDevices(account.id),null,2)}]}));
