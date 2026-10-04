@@ -24,6 +24,7 @@ export async function q(text, params=[]) {
 }
 
 export async function initDb() {
+  // Additive schema: existing accounts, credentials and usage counters are preserved.
   await q(`
     CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
@@ -124,6 +125,38 @@ export async function initDb() {
       resource TEXT NOT NULL,
       scope TEXT NOT NULL,
       expires_at BIGINT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS client_connections (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      client_name TEXT NOT NULL,
+      client_kind TEXT NOT NULL,
+      auth_method TEXT NOT NULL,
+      oauth_client_id TEXT,
+      auth_fingerprint TEXT,
+      created_at BIGINT NOT NULL,
+      last_seen BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_client_connections_account ON client_connections(account_id);
+    CREATE TABLE IF NOT EXISTS mcp_sessions (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      connection_id TEXT NOT NULL REFERENCES client_connections(id) ON DELETE CASCADE,
+      expires_at BIGINT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      device_id TEXT,
+      tool TEXT NOT NULL,
+      status TEXT NOT NULL,
+      duration_ms INTEGER NOT NULL,
+      created_at BIGINT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_usage_events_account ON usage_events(account_id,created_at);
+    CREATE TABLE IF NOT EXISTS account_preferences (
+      account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+      settings_json TEXT NOT NULL
     );
   `);
 }
