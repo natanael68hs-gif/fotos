@@ -11,6 +11,66 @@ document.getElementById('copyInstall')?.addEventListener('click', async e=>{
 const params=new URLSearchParams(location.search);
 const manageKey=params.get('manage');
 
+function escapeHtml(v){
+  return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function loadAccountLogin(section){
+  if(!manageKey) return;
+  const r=await fetch('/api/account?key='+encodeURIComponent(manageKey),{cache:'no-store'});
+  const data=await r.json();
+  if(!r.ok) throw new Error(data.error||'Falha ao carregar conta');
+
+  let card=document.getElementById('accountLoginCard');
+  if(!card){
+    card=document.createElement('article');
+    card.id='accountLoginCard';
+    card.className='device-card';
+    section?.appendChild(card);
+  }
+
+  if(data.hasCredentials){
+    card.innerHTML='<div class="device-icon">✓</div><div><strong>Login Codx Remote configurado</strong><span>'+escapeHtml(data.email||'')+'</span></div><span class="btn small ghost">OAuth pronto</span>';
+    return;
+  }
+
+  card.innerHTML=`
+    <div class="device-icon">＠</div>
+    <div style="flex:1">
+      <strong>Crie seu login Codx Remote</strong>
+      <span>Esse login será usado para autorizar o plugin no ChatGPT.</span>
+      <form id="credentialForm" style="margin-top:14px;display:grid;gap:9px">
+        <input id="credentialEmail" type="email" autocomplete="email" placeholder="seu@email.com" required
+          style="padding:11px;border-radius:8px;border:1px solid #344157;background:#0a101a;color:white">
+        <input id="credentialPassword" type="password" autocomplete="new-password" placeholder="Senha com 10+ caracteres" minlength="10" required
+          style="padding:11px;border-radius:8px;border:1px solid #344157;background:#0a101a;color:white">
+        <button class="btn small" type="submit">Criar login</button>
+        <span id="credentialMessage"></span>
+      </form>
+    </div>`;
+
+  document.getElementById('credentialForm')?.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const msg=document.getElementById('credentialMessage');
+    const email=document.getElementById('credentialEmail').value;
+    const password=document.getElementById('credentialPassword').value;
+    msg.textContent='Salvando...';
+    try{
+      const rr=await fetch('/api/account?key='+encodeURIComponent(manageKey),{
+        method:'POST',
+        headers:{'content-type':'application/json'},
+        body:JSON.stringify({action:'set_credentials',email,password})
+      });
+      const dd=await rr.json();
+      if(!rr.ok) throw new Error(dd.error||'Falha');
+      msg.textContent='Login criado.';
+      loadAccountLogin(section);
+    }catch(err){
+      msg.textContent='Erro: '+err.message;
+    }
+  });
+}
+
 async function loadManager(){
   const section=document.getElementById('manager');
   const hint=document.getElementById('managerHint');
@@ -53,13 +113,11 @@ async function loadManager(){
       });
       loadManager();
     }));
+
+    await loadAccountLogin(section);
   }catch(err){
     if(hint) hint.textContent='Manager inválido ou indisponível: '+err.message;
   }
-}
-
-function escapeHtml(v){
-  return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
 document.getElementById('managerRefresh')?.addEventListener('click',loadManager);
