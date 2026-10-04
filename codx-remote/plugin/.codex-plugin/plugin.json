@@ -24,7 +24,7 @@
     "composerIcon": "./assets/codx-icon-0.9.2.png"
   },
   "name": "codx-remote",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Acesse computadores Windows autorizados pelo ChatGPT para trabalhar com arquivos, pastas, PowerShell e processos.",
   "author": {
     "name": "Codx Remote",
