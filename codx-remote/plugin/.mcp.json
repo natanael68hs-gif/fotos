@@ -3,7 +3,7 @@
   "mcpServers": {
     "codxRemote": {
       "type": "streamable-http",
-      "url": "https://codx-remote-zrider.vercel.app/api/mcp"
+      "url": "https://codx-remote-api-zrider.onrender.com/mcp"
     }
   }
 }
