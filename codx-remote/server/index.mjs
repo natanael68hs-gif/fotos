@@ -215,7 +215,7 @@ Write-Host ""
 });
 
 app.get('/health',async(_req,res)=>{
-  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.5.0',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
+  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.5.1',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
   catch(e){json(res,500,{ok:false,error:String(e.message||e)})}
 });
 
@@ -232,7 +232,7 @@ app.get('/selftest',async(_req,res)=>{
     const row=(await q('SELECT id,device_name FROM devices WHERE id=$1 AND account_id=$2',[deviceId,account.id])).rows[0];
     const ok=!!row && row.device_name==='CODX-SELFTEST';
     await q('DELETE FROM accounts WHERE id=$1',[account.id]);
-    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.5.0'});
+    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.5.1'});
   }catch(e){
     if(account?.id){try{await q('DELETE FROM accounts WHERE id=$1',[account.id])}catch{}}
     console.error(e);
@@ -404,6 +404,24 @@ app.post('/setup',async(req,res)=>{
   }catch(e){
     console.error(e);
     return res.status(400).type('html').send(page('Erro','<main class="auth"><div class="card"><h1>Não foi possível autorizar</h1><p class="muted">'+esc(String(e.message||e))+'</p></div></main>'));
+  }
+});
+
+app.get('/register',(req,res)=>res.type('html').send(page('Criar conta','<main class="auth"><form class="card" method="post" action="/register"><span class="badge"><span class="dot"></span> CODX REMOTE</span><h1>Criar conta</h1><p class="muted">Crie sua conta para gerenciar computadores e uso do Codx Remote.</p><div class="field"><label>Nome</label><input name="name" required></div><div class="field"><label>E-mail</label><input type="email" name="email" required></div><div class="field"><label>Senha</label><input type="password" name="password" minlength="10" required></div><button class="btn">Criar conta</button><p class="muted" style="margin-top:16px">Já tem conta? <a href="/login" style="color:#8eb5ff">Entrar</a></p></form></main>')));
+
+app.post('/register',async(req,res)=>{
+  try{
+    const email=String(req.body?.email||'');
+    if(await accountByEmail(email)){
+      return res.status(409).type('html').send(page('Conta existente','<main class="auth"><div class="card"><h1>Esse e-mail já está cadastrado</h1><p class="muted">Entre na sua conta para continuar.</p><a class="btn" href="/login">Entrar</a></div></main>'));
+    }
+    let account=(await createAccount()).account;
+    account=await setCredentials(account,req.body?.name,email,req.body?.password);
+    await createSession(req,res,account.id);
+    return res.redirect(302,'/dashboard');
+  }catch(e){
+    console.error(e);
+    return res.status(400).type('html').send(page('Erro ao criar conta','<main class="auth"><div class="card"><h1>Não foi possível criar a conta</h1><p class="muted">'+esc(String(e.message||e))+'</p><a class="btn" href="/register">Tentar novamente</a></div></main>'));
   }
 });
 
