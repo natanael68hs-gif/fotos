@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "codx-remote",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "Acesse computadores Windows autorizados pelo ChatGPT para trabalhar com arquivos, pastas, PowerShell e processos.",
   "author": {
     "name": "Codx Remote",
@@ -44,6 +44,5 @@
         "composerIcon": "./assets/codx-icon-0.9.2.png"
       }
     }
-  },
-  "skills": "./skills/"
+  }
 }
