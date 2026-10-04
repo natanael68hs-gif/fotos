@@ -2,13 +2,14 @@
   "interface": {
     "displayName": "Codx Remote",
     "shortDescription": "Acesse seu PC pelo chat",
-    "longDescription": "Conecte seu computador Windows autorizado ao ChatGPT e trabalhe com arquivos, pastas, PowerShell, informações do sistema e processos por meio do Codx Remote.",
+    "longDescription": "Conecte seu computador Windows autorizado ao ChatGPT e trabalhe com arquivos, pastas, PowerShell, informaÃ§Ãµes do sistema e processos por meio do Codx Remote.",
     "developerName": "Codx Remote",
     "category": "Developer Tools",
     "capabilities": [
       "Read",
       "Write",
-      "Actions"
+      "Actions",
+      "Interactive"
     ],
     "websiteURL": "https://codx-remote.onrender.com",
     "privacyPolicyURL": "https://codx-remote.onrender.com/privacy",
@@ -18,12 +19,12 @@
       "Mostre as pastas do meu computador.",
       "Leia um arquivo do meu computador."
     ],
-    "brandColor": "#0B0F16",
-    "logo": "./assets/codx-logo.svg",
-    "composerIcon": "./assets/codx-logo.svg"
+    "brandColor": "#080A0E",
+    "logo": "./assets/codx-symbol.png",
+    "composerIcon": "./assets/codx-symbol.png"
   },
   "name": "codx-remote",
-  "version": "0.7.4",
+  "version": "0.9.0",
   "description": "Acesse computadores Windows autorizados pelo ChatGPT para trabalhar com arquivos, pastas, PowerShell e processos.",
   "author": {
     "name": "Codx Remote",
@@ -39,5 +40,6 @@
   ],
   "homepage": "https://codx-remote.onrender.com",
   "repository": "https://github.com/natanael68hs-gif/fotos/tree/main/codx-remote",
-  "mcpServers": "./.mcp.json"
+  "mcpServers": "./.mcp.json",
+  "skills": "./skills/"
 }

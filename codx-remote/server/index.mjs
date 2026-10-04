@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import { q, initDb } from './db.mjs';
+import { dashboardHtml, dashboardData, connectionFor, createMcpSession, activity } from './dashboard.mjs';
+import { ACTIVITY_URI, ACTIVITY_META, activityResource } from './activity-widget.mjs';
 import {
   now, token, sha, normalizeEmail, validEmail, passwordDigest, verifyPassword,
   monthKey, parseCookies, json, bearer, clip
@@ -153,6 +155,17 @@ const MCP_TOOLS=[
   {name:'list_processes',description:'List running processes on the connected PC.',inputSchema:{type:'object',properties:{limit:{type:'integer',minimum:1,maximum:300,default:100},deviceId:{type:'string'}},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false}}
 ];
 
+MCP_TOOLS.push({name:'show_activity',title:'Atividade Codx Remote',description:'Show the live, branded Codx Remote activity card with online devices and running remote operations. Use when the user wants to monitor computer work. Read-only and does not consume remote quota.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true,destructiveHint:false},_meta:ACTIVITY_META});
+for(const tool of MCP_TOOLS){
+  tool.icons=[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}];
+  tool._meta={...tool._meta,'openai/toolInvocation/invoking':'Codx Remote · '+(tool.name==='run_powershell'?'Executando no computador…':'Consultando seu computador…'),'openai/toolInvocation/invoked':'Codx Remote · Concluído'};
+}
+async function activitySnapshot(accountId){
+  const devices=await listDevices(accountId);
+  const activeTools=(await q('SELECT c.device_id,c.tool,c.status FROM commands c JOIN devices d ON c.device_id=d.id WHERE d.account_id=$1',[accountId])).rows.map(c=>({deviceId:c.device_id,tool:c.tool,status:c.status}));
+  return {devices,activeTools,updatedAt:now()};
+}
+
 app.get('/agent/agent.mjs',async(_req,res)=>{
   try{
     const code=await fs.readFile(AGENT_FILE,'utf8');
@@ -166,7 +179,7 @@ app.get('/agent/agent.mjs',async(_req,res)=>{
 app.get('/install.ps1',(_req,res)=>res.type('text/plain; charset=utf-8').sendFile(path.join(PUBLIC_DIR,'install.ps1')));
 
 app.get('/health',async(_req,res)=>{
-  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.7.1',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
+  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.9.0',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
   catch(e){json(res,500,{ok:false,error:String(e.message||e)})}
 });
 
@@ -183,7 +196,7 @@ app.get('/selftest',async(_req,res)=>{
     const row=(await q('SELECT id,device_name FROM devices WHERE id=$1 AND account_id=$2',[deviceId,account.id])).rows[0];
     const ok=!!row && row.device_name==='CODX-SELFTEST';
     await q('DELETE FROM accounts WHERE id=$1',[account.id]);
-    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.7.1'});
+    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.9.0'});
   }catch(e){
     if(account?.id){try{await q('DELETE FROM accounts WHERE id=$1',[account.id])}catch{}}
     console.error(e);
@@ -312,6 +325,7 @@ app.post('/api/dashboard-action',async(req,res)=>{
   try{
     const a=await sessionAccount(req);
     if(!a)return json(res,401,{error:'unauthorized'});
+    if(![BACKEND,SITE].includes(req.get('origin')))return json(res,403,{error:'invalid_origin'});
     const id=String(req.body?.deviceId||''),action=String(req.body?.action||'');
     const d=(await q('SELECT * FROM devices WHERE id=$1 AND account_id=$2',[id,a.id])).rows[0];
     if(!d)return json(res,404,{error:'device_not_found'});
@@ -333,8 +347,8 @@ app.post('/api/dashboard-action',async(req,res)=>{
 
 
 function page(title,body,navAction=''){
-  const action=navAction||'<a class="nav-manage" href="/dashboard">Manage devices</a>';
-  return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080c13"><title>'+esc(title)+' — Codx Remote</title><link rel="icon" href="/assets/codx-logo.svg"><link rel="stylesheet" href="/assets/styles.css"></head><body><header class="site-nav"><div class="nav-inner"><a class="brand" href="'+MARKETING_SITE+'"><img class="brand-mark" src="/assets/codx-logo.svg" alt=""><span>Codx Remote</span></a><div class="nav-side">'+action+'</div></div></header>'+body+'<script src="/assets/app.js"></script></body></html>';
+  const action=navAction||'<a class="nav-manage" href="/dashboard">Meus dispositivos</a>';
+  return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080c13"><title>'+esc(title)+' — Codx Remote</title><link rel="icon" href="/assets/codx-symbol.png"><link rel="stylesheet" href="/assets/redesign.css?v=0.9.0"></head><body><header class="site-nav"><div class="nav-inner"><a class="brand" href="'+MARKETING_SITE+'"><img class="brand-mark" src="/assets/codx-symbol.png" alt=""><img class="brand-name" src="/assets/codx-wordmark.png" alt="Codx Remote"></a><div class="nav-side">'+action+'</div></div></header>'+body+'<script src="/assets/redesign.js?v=0.9.0" type="module"></script></body></html>';
 }
 
 app.get('/setup',async(req,res)=>{
@@ -343,7 +357,7 @@ app.get('/setup',async(req,res)=>{
   if(!setup||now()>Number(setup.expires_at||0)){
     return res.status(400).type('html').send(page('Link expirado','<main class="auth-shell"><div class="auth-card"><span class="eyebrow">AUTORIZAÇÃO</span><h1>Link expirado</h1><p>Execute novamente o agente Codx Remote para gerar uma nova autorização.</p><a class="btn secondary" href="/install">Voltar para Install</a></div></main>'));
   }
-  return res.type('html').send(page('Autorizar PC','<main class="auth-shell"><form class="auth-card" method="post" action="/setup"><span class="eyebrow"><span class="live-dot"></span> PC DETECTADO</span><h1>Autorize este computador</h1><p>Crie sua conta Codx Remote para vincular este PC e abrir o dashboard.</p><input type="hidden" name="token" value="'+esc(tokenValue)+'"><div class="field"><label>Nome</label><input name="name" autocomplete="name" required></div><div class="field"><label>E-mail</label><input type="email" name="email" autocomplete="email" required></div><div class="field"><label>Senha</label><input type="password" name="password" minlength="10" autocomplete="new-password" required></div><button class="btn" style="width:100%">Autorizar e abrir Dashboard</button><div class="auth-links">Este dispositivo será vinculado somente à sua conta.</div></form></main>','<a class="nav-manage" href="'+MARKETING_SITE+'">Site</a>'));
+  return res.type('html').send(page('Autorizar PC','<main class="auth-shell"><form class="auth-card" method="post" action="/setup"><span class="eyebrow"><span class="live-dot"></span> PC DETECTADO</span><h1>Autorize este computador</h1><p>Crie sua conta Codx Remote para vincular este PC e abrir o dashboard.</p><input type="hidden" name="token" value="'+esc(tokenValue)+'"><div class="field"><label for="name">Nome</label><input id="name" name="name" autocomplete="name" required></div><div class="field"><label for="email">E-mail</label><input id="email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="password">Senha</label><input id="password" type="password" name="password" minlength="10" autocomplete="new-password" required></div><button class="btn" style="width:100%">Autorizar e abrir Dashboard</button><div class="auth-links">Este dispositivo será vinculado somente à sua conta.</div></form></main>','<a class="nav-manage" href="'+MARKETING_SITE+'">Site</a>'));
 });
 
 app.post('/setup',async(req,res)=>{
@@ -366,8 +380,9 @@ app.post('/setup',async(req,res)=>{
 
 app.get('/',(_req,res)=>res.sendFile(path.join(PUBLIC_DIR,'index.html')));
 app.get('/install',(_req,res)=>res.sendFile(path.join(PUBLIC_DIR,'install.html')));
+for(const route of ['privacy','terms'])app.get('/'+route,(_req,res)=>res.sendFile(path.join(PUBLIC_DIR,route,'index.html')));
 
-app.get('/register',(req,res)=>res.type('html').send(page('Criar conta','<main class="auth-shell"><form class="auth-card" method="post" action="/register"><span class="eyebrow"><span class="live-dot"></span> CONTA CODX REMOTE</span><h1>Criar conta</h1><p>Gerencie computadores, uso mensal e autorizações em um só lugar.</p><div class="field"><label>Nome</label><input name="name" autocomplete="name" required></div><div class="field"><label>E-mail</label><input type="email" name="email" autocomplete="email" required></div><div class="field"><label>Senha</label><input type="password" name="password" minlength="10" autocomplete="new-password" required></div><button class="btn" style="width:100%">Criar conta</button><div class="auth-links">Já tem conta? <a href="/login">Entrar</a></div></form></main>','<a class="nav-manage" href="/login">Entrar</a>')));
+app.get('/register',(req,res)=>res.type('html').send(page('Criar conta','<main class="auth-shell"><form class="auth-card" method="post" action="/register"><span class="eyebrow"><span class="live-dot"></span> CONTA CODX REMOTE</span><h1>Criar conta</h1><p>Gerencie computadores, uso mensal e autorizações em um só lugar.</p><div class="field"><label for="name">Nome</label><input id="name" name="name" autocomplete="name" required></div><div class="field"><label for="email">E-mail</label><input id="email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="password">Senha</label><input id="password" type="password" name="password" minlength="10" autocomplete="new-password" required></div><button class="btn" style="width:100%">Criar conta</button><div class="auth-links">Já tem conta? <a href="/login">Entrar</a></div></form></main>','<a class="nav-manage" href="/login">Entrar</a>')));
 
 app.post('/register',async(req,res)=>{
   try{
@@ -385,7 +400,7 @@ app.post('/register',async(req,res)=>{
   }
 });
 
-app.get('/login',(req,res)=>res.type('html').send(page('Login','<main class="auth-shell"><form class="auth-card" method="post" action="/login"><span class="eyebrow">WELCOME BACK</span><h1>Entrar no Codx Remote</h1><p>Acesse seus dispositivos e continue de onde parou.</p><div class="field"><label>E-mail</label><input type="email" name="email" autocomplete="email" required></div><div class="field"><label>Senha</label><input type="password" name="password" autocomplete="current-password" required></div><button class="btn" style="width:100%">Entrar</button><div class="auth-links">Ainda não tem conta? <a href="/register">Criar conta</a></div></form></main>','<a class="nav-manage" href="/register">Criar conta</a>')));
+app.get('/login',(req,res)=>res.type('html').send(page('Login','<main class="auth-shell"><form class="auth-card" method="post" action="/login"><span class="eyebrow">BEM-VINDO DE VOLTA</span><h1>Entrar no Codx Remote</h1><p>Acesse seus dispositivos e continue de onde parou.</p><div class="field"><label for="email">E-mail</label><input id="email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="password">Senha</label><input id="password" type="password" name="password" autocomplete="current-password" required></div><button class="btn" style="width:100%">Entrar</button><div class="auth-links">Ainda não tem conta? <a href="/register">Criar conta</a></div></form></main>','<a class="nav-manage" href="/register">Criar conta</a>')));
 
 app.post('/login',async(req,res)=>{
   const a=await verifyLogin(req.body?.email,req.body?.password);
@@ -424,11 +439,44 @@ app.get('/dashboard',async(req,res)=>{
   let a=await sessionAccount(req);
   if(!a)return res.redirect(302,'/login');
   a=await normalizeUsage(a);
-  const devices=await listDevices(a.id);
-  const pct=Math.min(100,Math.round(Number(a.monthly_tool_calls||0)/Math.max(1,Number(a.monthly_limit||500))*100));
-  const rows=devices.map(d=>'<div class="device-card"><div><h3>'+esc(d.deviceName)+' <span class="'+(d.online?'status-online':'status-offline')+'">'+(d.online?'● Online':'○ Offline')+'</span></h3><div class="device-meta">ID: '+esc(d.deviceId)+'<br>Chamadas: '+d.toolCalls+' • Último sinal: '+(d.lastSeen?new Date(d.lastSeen).toLocaleString('pt-BR'):'-')+'</div></div><div class="device-actions">'+(d.revoked?'<span class="status-offline">Revogado</span>':'<form method="post" action="/dashboard/device" style="display:flex;gap:8px;flex-wrap:wrap"><input type="hidden" name="deviceId" value="'+esc(d.deviceId)+'"><button class="btn secondary small" name="action" value="disconnect">Desconectar</button><button class="btn danger small" name="action" value="revoke">Revogar</button></form>')+'</div></div>').join('');
-  const body='<main class="container dashboard"><div class="dash-head"><div><span class="eyebrow"><span class="live-dot"></span> CONTA ATIVA</span><h1>Olá, '+esc(a.name||a.email?.split('@')[0]||'Codx User')+'</h1><div class="dash-meta">'+esc(a.email||'')+' • '+esc(a.plan||'Free')+'</div></div><form method="post" action="/logout"><button class="btn secondary small">Sair</button></form></div><div class="dash-grid"><section class="dash-card"><div class="dash-label">Uso mensal</div><div class="dash-value">'+Number(a.monthly_tool_calls||0)+' / '+Number(a.monthly_limit||500)+'</div><div class="usage-bar"><i style="width:'+pct+'%"></i></div></section><section class="dash-card"><div class="dash-label">Total histórico</div><div class="dash-value">'+Number(a.total_tool_calls||0)+'</div><div class="dash-meta">chamadas MCP</div></section></div><div class="devices-title"><div class="kicker">DEVICES</div><h2>Seus computadores</h2><p class="section-lead">Enquanto o agente estiver aberto, o dispositivo aparece como Online.</p></div><div class="device-list">'+(rows||'<div class="dash-card">Nenhum dispositivo conectado.</div>')+'</div><section class="dash-card" style="margin-top:24px"><h2>Conexão automática no Codex</h2><p>Configure uma vez com sua chave pessoal para conectar sem abrir o login OAuth. Ela funciona até você trocar a chave.</p><a class="btn small" href="/dashboard/mcp-config?format=toml">Baixar configuração do Codex</a> <a class="btn secondary small" href="/dashboard/mcp-config">Baixar configuração MCP</a><p>No Codex, adicione o conteúdo do arquivo TOML ao seu config.toml e reinicie o aplicativo. Para outros clientes, use a configuração MCP JSON. Desative a conexão OAuth anterior para evitar ferramentas duplicadas. Não compartilhe esse arquivo: ele permite acesso aos seus computadores.</p><form method="post" action="/dashboard/mcp-key/rotate"><button class="btn secondary small">Trocar chave e invalidar configurações anteriores</button></form></section></main>';
-  res.type('html').send(page('Dashboard',body,'<a class="btn small" href="/install">+ Conectar PC</a>'));
+  const data=await dashboardData(a,await listDevices(a.id));
+  return res.type('html').send(dashboardHtml(data,{marketing:MARKETING_SITE,backend:BACKEND,resource:RESOURCE}));
+});
+app.get('/api/dashboard',async(req,res)=>{
+  let a=await sessionAccount(req);if(!a)return json(res,401,{error:'unauthorized'});
+  a=await normalizeUsage(a);
+  return json(res,200,await dashboardData(a,await listDevices(a.id)));
+});
+app.get('/api/dashboard/usage.csv',async(req,res)=>{
+  const a=await sessionAccount(req);if(!a)return json(res,401,{error:'unauthorized'});
+  const rows=(await q('SELECT tool,status,duration_ms,created_at FROM usage_events WHERE account_id=$1 AND created_at>$2 ORDER BY created_at DESC',[a.id,now()-30*24*3600000])).rows;
+  res.setHeader('Content-Disposition','attachment; filename="codx-remote-usage.csv"');
+  const csvValue=v=>'"'+String(v).replace(/"/g,'""')+'"';
+  return res.type('text/csv; charset=utf-8').send('date,tool,status,duration_ms\r\n'+rows.map(r=>[new Date(Number(r.created_at)).toISOString(),r.tool,r.status,r.duration_ms].map(csvValue).join(',')).join('\r\n'));
+});
+app.post('/api/dashboard/settings',async(req,res)=>{
+  const a=await sessionAccount(req);if(!a)return json(res,401,{error:'unauthorized'});
+  if(![BACKEND,SITE].includes(req.get('origin')))return json(res,403,{error:'invalid_origin'});
+  const p=req.body||{};
+  if(p.action==='profile'){
+    const name=String(p.name||'').trim().slice(0,80);if(!name)return json(res,400,{error:'invalid_name'});
+    await q('UPDATE accounts SET name=$1 WHERE id=$2',[name,a.id]);
+  }else if(p.action==='preferences'){
+    await q('INSERT INTO account_preferences(account_id,settings_json) VALUES($1,$2) ON CONFLICT(account_id) DO UPDATE SET settings_json=EXCLUDED.settings_json',[a.id,JSON.stringify({animations:p.animations!==false,autoRefresh:p.autoRefresh!==false})]);
+  }else if(p.action==='password'){
+    if(!await verifyLogin(a.email,p.currentPassword))return json(res,403,{error:'invalid_credentials'});
+    if(String(p.newPassword||'').length<10)return json(res,400,{error:'password_too_short'});
+    const digest=passwordDigest(p.newPassword);
+    await q('UPDATE accounts SET password_salt=$1,password_hash=$2 WHERE id=$3',[digest.salt,digest.hash,a.id]);
+    const current=sha(parseCookies(req)[COOKIE]||'');
+    await q('DELETE FROM sessions WHERE account_id=$1 AND token_hash<>$2',[a.id,current]);
+  }else if(p.action==='revoke_client'){
+    const c=(await q('SELECT * FROM client_connections WHERE id=$1 AND account_id=$2',[String(p.connectionId||''),a.id])).rows[0];
+    if(!c||c.auth_method!=='oauth')return json(res,404,{error:'connection_not_found'});
+    await q('DELETE FROM oauth_refresh WHERE account_id=$1 AND client_id=$2',[a.id,c.oauth_client_id]);
+    await q('DELETE FROM oauth_access WHERE account_id=$1 AND client_id=$2',[a.id,c.oauth_client_id]);
+  }else return json(res,400,{error:'unknown_action'});
+  return json(res,200,{ok:true});
 });
 
 app.post('/dashboard/device',async(req,res)=>{
@@ -488,7 +536,7 @@ async function validateAuthParams(p){
 function loginHtml(p,msg=''){
   const names=['client_id','redirect_uri','response_type','code_challenge','code_challenge_method','state','resource','scope'];
   const hidden=names.map(n=>'<input type="hidden" name="'+n+'" value="'+esc(p[n]||'')+'">').join('');
-  return '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Codx Remote</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#070b12;color:#fff;font-family:system-ui}.c{width:min(92vw,430px);padding:28px;border:1px solid #293a55;border-radius:20px;background:#0f1726}.m{color:#91a0b5}input,button{width:100%;box-sizing:border-box;padding:12px;border-radius:9px;margin-top:10px}input{background:#090e17;border:1px solid #30405b;color:#fff}button{border:0;background:#3274f6;color:#fff;font-weight:700}.e{color:#ff9faf}</style></head><body><form class="c" method="post"><h1>Codx Remote</h1><p class="m">Autorize o ChatGPT a usar seus dispositivos Codx Remote.</p>'+ (msg?'<p class="e">'+esc(msg)+'</p>':'')+hidden+'<input type="email" name="email" placeholder="E-mail" required><input type="password" name="password" placeholder="Senha" required><button>Autorizar</button></form></body></html>';
+  return page('Autorizar conexão','<main class="auth-shell"><form class="auth-card" method="post"><span class="eyebrow">CONEXÃO AUTORIZADA</span><h1>Seu assistente, conectado.</h1><p>Autorize este cliente MCP a usar os computadores da sua conta Codx Remote.</p>'+ (msg?'<p role="alert" style="color:#ff9faf">'+esc(msg)+'</p>':'')+hidden+'<div class="field"><label for="oauth-email">E-mail</label><input id="oauth-email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="oauth-password">Senha</label><input id="oauth-password" type="password" name="password" autocomplete="current-password" required></div><button class="btn" style="width:100%">Autorizar conexão</button><p class="setting-help">O acesso permanece vinculado à sua conta. Gerencie suas conexões pelo dashboard.</p></form></main>');
 }
 app.all('/oauth/authorize',async(req,res)=>{
   try{
@@ -545,14 +593,23 @@ async function mcpHandler(req,res){
       return json(res,401,rpcError(req.body?.id,-32001,'Codx Remote authentication required.'));
     }
     await normalizeUsage(account);
-    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.7.1'});
+    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.9.0'});
     const msg=req.body||{};
     if(msg.method==='notifications/initialized')return json(res,204,null);
-    if(msg.method==='initialize')return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.7.1'}}));
+    if(msg.method==='initialize'){
+      const connectionId=await connectionFor(req,account,msg.params?.clientInfo||{name:'Cliente MCP'});
+      res.setHeader('Mcp-Session-Id',await createMcpSession(account.id,connectionId));
+      return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false},resources:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.9.0',icons:[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}]}}));
+    }
+    await connectionFor(req,account);
+    if(msg.method==='resources/list')return json(res,200,rpcResult(msg.id,{resources:[{uri:ACTIVITY_URI,name:'Codx Remote Activity',mimeType:'text/html;profile=mcp-app'}]}));
+    if(msg.method==='resources/read')return json(res,200,msg.params?.uri===ACTIVITY_URI?rpcResult(msg.id,{contents:[activityResource(BACKEND)]}):rpcError(msg.id,-32002,'Resource not found'));
+
     if(msg.method==='ping')return json(res,200,rpcResult(msg.id,{}));
     if(msg.method==='tools/list')return json(res,200,rpcResult(msg.id,{tools:MCP_TOOLS}));
     if(msg.method!=='tools/call')return json(res,200,rpcError(msg.id,-32601,'Method not found'));
     const name=String(msg.params?.name||''),args={...(msg.params?.arguments||{})};
+    if(name==='show_activity'){const snapshot=await activitySnapshot(account.id);return json(res,200,rpcResult(msg.id,{structuredContent:snapshot,content:[{type:'text',text:JSON.stringify(snapshot)}]}))}
     if(name==='list_devices')return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:JSON.stringify(await listDevices(account.id),null,2)}]}));
     if(name==='who_am_i')return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:JSON.stringify({accountId:account.id,plan:account.plan,monthlyLimit:Number(account.monthly_limit),monthlyToolCalls:Number(account.monthly_tool_calls),totalToolCalls:Number(account.total_tool_calls),devices:await listDevices(account.id)},null,2)}]}));
     if(Number(account.monthly_tool_calls)>=Number(account.monthly_limit))return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:'Monthly Codx Remote usage limit reached.'}],isError:true}));
@@ -570,17 +627,20 @@ async function mcpHandler(req,res){
       if(rr){
         await q('DELETE FROM results WHERE command_id=$1',[id]);
         await q('UPDATE accounts SET total_tool_calls=total_tool_calls+1,monthly_tool_calls=monthly_tool_calls+1 WHERE id=$1',[account.id]);
+        await activity(account.id,device.deviceId,name,rr.ok?'success':'failed',rr.duration_ms);
         return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:rr.ok?(rr.output||'(no output)'):(rr.error||'Command failed.')}],isError:!rr.ok}));
       }
       await new Promise(r=>setTimeout(r,650));
     }
     await q('DELETE FROM commands WHERE id=$1',[id]);
+    await activity(account.id,device.deviceId,name,'timeout',50000);
     return json(res,200,rpcResult(msg.id,{content:[{type:'text',text:'Timed out waiting for the connected PC.'}],isError:true}));
   }catch(e){console.error(e);json(res,500,rpcError(req.body?.id,-32000,'Codx Remote backend error'))}
 }
 
 app.all('/mcp',mcpHandler);
 app.all('/api/mcp',mcpHandler);
+app.use((req,res)=>{if(req.method==='GET'&&req.accepts('html'))return res.status(404).sendFile(path.join(PUBLIC_DIR,'404.html'));return json(res,404,{error:'not_found'})});
 
 await initDb();
 export const server=app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend listening on',server.address().port));

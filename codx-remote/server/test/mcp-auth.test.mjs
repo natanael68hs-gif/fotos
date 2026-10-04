@@ -91,4 +91,61 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     const key=(await r.json()).mcpServers.codxRemote.headers.Authorization.slice(7);
     assert.notEqual(key,keys[0]);assert.equal((await rpc(key)).status,200);
   });
+  await t.test('dashboard exposes only account-scoped metadata and persists settings',async()=>{
+    const headers={Cookie:'codx_session=dashboard-session',Origin:'https://codx-remote-api-zrider.onrender.com','Content-Type':'application/json'};
+    assert.equal((await fetch(base+'/api/dashboard')).status,401);
+    const info=await (await fetch(base+'/api/dashboard',{headers})).json();
+    assert.deepEqual(info.devices.map(d=>d.deviceId),['device-0']);
+    assert.equal(JSON.stringify(info).includes('mcp_key'),false);
+    assert.equal(JSON.stringify(info).includes('secret_hash'),false);
+    const save=body=>fetch(base+'/api/dashboard/settings',{method:'POST',headers,body:JSON.stringify(body)});
+    assert.equal((await save({action:'profile',name:'Conta <A>'})).status,200);
+    assert.equal((await save({action:'preferences',animations:false,autoRefresh:false})).status,200);
+    const updated=await (await fetch(base+'/api/dashboard',{headers})).json();
+    assert.equal(updated.account.name,'Conta <A>');assert.deepEqual(updated.settings,{animations:false,autoRefresh:false});
+    const html=await (await fetch(base+'/dashboard',{headers})).text();assert.match(html,/Conta &lt;A&gt;/);assert.equal(html.includes('Conta <A>'),false);
+    assert.equal((await fetch(base+'/api/dashboard/settings',{method:'POST',headers:{...headers,Origin:'https://evil.example'},body:JSON.stringify({action:'profile',name:'Altered'})})).status,403);
+    assert.equal((await fetch(base+'/api/dashboard-action',{method:'POST',headers,body:JSON.stringify({action:'revoke',deviceId:'device-1'})})).status,404);
+  });
+  await t.test('client identity survives stateless calls and OAuth revocation is scoped',async()=>{
+    await q('INSERT INTO oauth_clients(client_id,redirect_uris_json,client_name,created_at) VALUES($1,$2,$3,$4)',['test-ui-client','[]','MCP Client',Date.now()]);
+    await q('INSERT INTO oauth_access(token_hash,account_id,client_id,resource,scope,expires_at) VALUES($1,$2,$3,$4,$5,$6)',[sha('ui-oauth'),'account-0','test-ui-client',resource,'codx.remote',Date.now()+60000]);
+    const call=method=>fetch(base+'/mcp',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer ui-oauth'},body:JSON.stringify({jsonrpc:'2.0',id:91,method,params:method==='initialize'?{clientInfo:{name:'ChatGPT',version:'1'}}:{}})});
+    const initialized=await call('initialize');assert.ok(initialized.headers.get('mcp-session-id'));assert.equal(initialized.status,200);
+    await call('tools/list');
+    const headers={Cookie:'codx_session=dashboard-session',Origin:'https://codx-remote-api-zrider.onrender.com','Content-Type':'application/json'};
+    const info=await (await fetch(base+'/api/dashboard',{headers})).json();const client=info.connections.find(c=>c.name==='ChatGPT');assert.ok(client);assert.equal(client.kind,'chatgpt');assert.equal(client.authorized,true);
+    const invalid=await fetch(base+'/api/dashboard/settings',{method:'POST',headers,body:JSON.stringify({action:'revoke_client',connectionId:'foreign-id'})});assert.equal(invalid.status,404);
+    const revoked=await fetch(base+'/api/dashboard/settings',{method:'POST',headers,body:JSON.stringify({action:'revoke_client',connectionId:client.id})});assert.equal(revoked.status,200);assert.equal((await call('tools/list')).status,401);
+    assert.equal((await rpc(keys[1])).status,200);
+  });
+  await t.test('branded activity resources and usage history stay private and do not consume quota',async()=>{
+    const key=(await q('SELECT mcp_key FROM accounts WHERE id=$1',['account-0'])).rows[0].mcp_key;
+    const call=body=>fetch(base+'/mcp',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({jsonrpc:'2.0',id:95,...body})});
+    const tools=(await (await call({method:'tools/list'})).json()).result.tools;assert.ok(tools.find(t=>t.name==='show_activity')._meta.ui.resourceUri);
+    const before=(await q('SELECT monthly_tool_calls FROM accounts WHERE id=$1',['account-0'])).rows[0].monthly_tool_calls;
+    const snapshot=(await (await call({method:'tools/call',params:{name:'show_activity',arguments:{}}})).json()).result.structuredContent;assert.deepEqual(snapshot.devices.map(d=>d.deviceId),['device-0']);
+    assert.equal((await q('SELECT monthly_tool_calls FROM accounts WHERE id=$1',['account-0'])).rows[0].monthly_tool_calls,before);
+    const uri=tools.find(t=>t.name==='show_activity')._meta.ui.resourceUri;
+    const resourceResponse=(await (await call({method:'resources/read',params:{uri}})).json()).result.contents[0];assert.equal(resourceResponse.mimeType,'text/html;profile=mcp-app');assert.match(resourceResponse.text,/ui\/initialize/);assert.equal(resourceResponse._meta['openai/ui'].preferredDisplayMode,'inline');
+    const {activity}=await import('../dashboard.mjs');await activity('account-0','device-0','read_file','success',123);await activity('account-1','device-1','write_file','failed',987);
+    const headers={Cookie:'codx_session=dashboard-session'};const info=await (await fetch(base+'/api/dashboard',{headers})).json();assert.equal(info.events.length,1);assert.equal(info.events[0].tool,'read_file');
+    const csv=await (await fetch(base+'/api/dashboard/usage.csv',{headers})).text();assert.match(csv,/read_file/);assert.equal(csv.includes('write_file'),false);assert.equal((await fetch(base+'/api/dashboard/usage.csv')).status,401);
+  });
+  await t.test('remote command completion records metadata without file contents or arguments',async()=>{
+    const key=(await q('SELECT mcp_key FROM accounts WHERE id=$1',['account-0'])).rows[0].mcp_key;
+    await q('UPDATE devices SET last_seen=$1 WHERE id=$2',[Date.now(),'device-0']);
+    const resultPromise=fetch(base+'/mcp',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+key},body:JSON.stringify({jsonrpc:'2.0',id:99,method:'tools/call',params:{name:'read_file',arguments:{path:'C:\\private-sensitive-file.txt',deviceId:'device-0'}}})});
+    let command;
+    for(let i=0;i<20&&!command;i++){
+      const poll=await fetch(base+'/api/device?action=poll',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer device-secret-0'},body:JSON.stringify({deviceId:'device-0'})});command=(await poll.json()).command;
+      if(!command)await new Promise(resolve=>setTimeout(resolve,50));
+    }
+    assert.ok(command);assert.equal(command.tool,'read_file');
+    const active=(await q('SELECT * FROM commands WHERE device_id=$1',['device-0'])).rows;assert.equal(active.length,1);
+    const posted=await fetch(base+'/api/device?action=result',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer device-secret-0'},body:JSON.stringify({deviceId:'device-0',commandId:command.commandId,ok:true,output:'private-file-content',durationMs:420})});assert.equal(posted.status,200);
+    const rpcResult=await (await resultPromise).json();assert.equal(rpcResult.result.content[0].text,'private-file-content');
+    const info=await (await fetch(base+'/api/dashboard',{headers:{Cookie:'codx_session=dashboard-session'}})).json();assert.equal(info.events[0].tool,'read_file');assert.equal(info.events[0].durationMs,420);assert.equal(info.account.monthlyToolCalls,1);
+    const rendered=JSON.stringify(info);assert.equal(rendered.includes('private-file-content'),false);assert.equal(rendered.includes('private-sensitive-file'),false);
+  });
 });
