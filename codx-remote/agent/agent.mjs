@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 const SERVER = process.env.CODX_REMOTE_URL || 'https://codx-remote-zrider.vercel.app';
 const ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'CodxRemote');
 const CONFIG = path.join(ROOT, 'config.json');
-const VERSION = '0.5.0';
+const VERSION = '0.5.1';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -32,10 +32,24 @@ async function request(url, options = {}) {
 }
 
 async function openUrl(url) {
-  if (!url) return;
-  try {
-    await execFileAsync('explorer.exe', [url], { windowsHide: true, timeout: 10000 });
-  } catch {}
+  if (!url) return false;
+
+  const attempts = [
+    ['rundll32.exe', ['url.dll,FileProtocolHandler', url]],
+    ['cmd.exe', ['/d', '/s', '/c', 'start', '', url]],
+    ['explorer.exe', [url]]
+  ];
+
+  for (const [exe, args] of attempts) {
+    try {
+      await execFileAsync(exe, args, { windowsHide: true, timeout: 10000 });
+      return true;
+    } catch {}
+  }
+
+  console.log('[WARN] Browser could not be opened automatically.');
+  console.log('[OPEN] ' + url);
+  return false;
 }
 
 async function register(config) {
