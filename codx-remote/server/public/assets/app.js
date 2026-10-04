@@ -1,4 +1,5 @@
 (()=>{
+  const BACKEND='https://codx-remote-api-zrider.onrender.com';
   const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{
     if(entry.isIntersecting){entry.target.classList.add('visible');observer.unobserve(entry.target)}
   }),{threshold:.12});
@@ -6,6 +7,8 @@
 
   const toast=document.createElement('div');toast.className='toast';document.body.appendChild(toast);
   const notify=(msg)=>{toast.textContent=msg;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),1600)};
+
+  document.querySelectorAll('[data-backend-href]').forEach(el=>{el.href=BACKEND+el.dataset.backendHref});
 
   document.querySelectorAll('[data-copy]').forEach(btn=>{
     btn.addEventListener('click',async()=>{
