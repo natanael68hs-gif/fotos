@@ -1,5 +1,5 @@
 import {
-  hash, putState, getState, listState, deleteState,
+  hash, randomToken, putState, getState, listState, deleteState,
   json, readBody, bearer
 } from '../lib/state.js';
 
@@ -17,6 +17,35 @@ export default async function handler(req, res) {
   const deviceId = String(body.deviceId || req.query.deviceId || '');
   const device = await authenticate(req, deviceId);
   if (!device) return json(res, 401, { error: 'unauthorized' });
+
+  if (action === 'rotate_links') {
+    const account = await getState('state/accounts/' + device.accountId + '.json');
+    if (!account) return json(res, 404, { error: 'account_not_found' });
+
+    const oldMcpKey = account.mcpKey;
+    const oldManageKey = account.manageKey;
+    const newMcpKey = randomToken(32);
+    const newManageKey = randomToken(32);
+
+    account.mcpKey = newMcpKey;
+    account.manageKey = newManageKey;
+
+    await Promise.all([
+      putState('state/accounts/' + account.accountId + '.json', account),
+      putState('state/mcp-key/' + hash(newMcpKey) + '.json', { accountId: account.accountId }),
+      putState('state/manage-key/' + hash(newManageKey) + '.json', { accountId: account.accountId }),
+      deleteState('state/mcp-key/' + hash(oldMcpKey) + '.json'),
+      deleteState('state/manage-key/' + hash(oldManageKey) + '.json')
+    ]);
+
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const base = proto + '://' + req.headers.host;
+    return json(res, 200, {
+      ok: true,
+      mcpUrl: base + '/api/mcp?key=' + encodeURIComponent(newMcpKey),
+      manageUrl: base + '/?manage=' + encodeURIComponent(newManageKey)
+    });
+  }
 
   if (action === 'heartbeat') {
     device.lastSeen = Date.now();
