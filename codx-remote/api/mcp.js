@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import {
   hash, putState, getState, deleteState, json, readBody, bearer
 } from '../lib/state.js';
+import { normalizeUsage } from '../lib/session.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -156,6 +157,8 @@ export default async function handler(req, res) {
     return json(res, 401, error(req.body?.id, -32001, 'Codx Remote authentication required.'));
   }
 
+  normalizeUsage(account);
+
   if (req.method === 'GET') {
     const devices = await loadDevices(account);
     return json(res, 200, {
@@ -175,7 +178,7 @@ export default async function handler(req, res) {
     return json(res, 200, result(msg.id, {
       protocolVersion: '2025-06-18',
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'Codx Remote', version: '0.3.0' }
+      serverInfo: { name: 'Codx Remote', version: '0.4.0' }
     }));
   }
 
@@ -214,6 +217,13 @@ export default async function handler(req, res) {
           online: d.online
         }))
       }, null, 2) }]
+    }));
+  }
+
+  if (Number(account.monthlyToolCalls || 0) >= Number(account.monthlyLimit || 500)) {
+    return json(res, 200, result(msg.id, {
+      content: [{ type: 'text', text: 'Monthly Codx Remote usage limit reached for this account.' }],
+      isError: true
     }));
   }
 
@@ -256,6 +266,8 @@ export default async function handler(req, res) {
       await deleteState('state/results/' + device.deviceId + '/' + commandId + '.json');
 
       account.totalToolCalls = Number(account.totalToolCalls || 0) + 1;
+      account.monthlyToolCalls = Number(account.monthlyToolCalls || 0) + 1;
+      normalizeUsage(account);
       await putState('state/accounts/' + account.accountId + '.json', account);
 
       return json(res, 200, result(msg.id, {
