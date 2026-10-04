@@ -183,7 +183,7 @@ app.get('/agent/agent.mjs',async(_req,res)=>{
 app.get('/install.ps1',(_req,res)=>res.type('text/plain; charset=utf-8').sendFile(path.join(PUBLIC_DIR,'install.ps1')));
 
 app.get('/health',async(_req,res)=>{
-  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.9.3',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
+  try{await q('SELECT 1');json(res,200,{ok:true,service:'codx-remote-backend',version:'0.9.5',storage:process.env.DATABASE_URL?'postgres':'memory',site:SITE})}
   catch(e){json(res,500,{ok:false,error:String(e.message||e)})}
 });
 
@@ -200,7 +200,7 @@ app.get('/selftest',async(_req,res)=>{
     const row=(await q('SELECT id,device_name FROM devices WHERE id=$1 AND account_id=$2',[deviceId,account.id])).rows[0];
     const ok=!!row && row.device_name==='CODX-SELFTEST';
     await q('DELETE FROM accounts WHERE id=$1',[account.id]);
-    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.9.3'});
+    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.9.5'});
   }catch(e){
     if(account?.id){try{await q('DELETE FROM accounts WHERE id=$1',[account.id])}catch{}}
     console.error(e);
@@ -593,15 +593,24 @@ async function mcpHandler(req,res){
   try{
     const account=await accountForMcp(req);
     if(account)await normalizeUsage(account);
-    if(req.method==='GET')return json(res,200,{name:'Codx Remote MCP',status:'ready',version:'0.9.3',authentication:account?'connected':'required'});
+    if(req.method==='GET'){
+      res.setHeader('Allow','POST');
+      return json(res,405,rpcError(null,-32600,'GET is not used by this Streamable HTTP endpoint.'));
+    }
     const msg=req.body||{};
-    if(msg.method==='notifications/initialized')return json(res,204,null);
+    if(msg.method==='notifications/initialized'){
+      res.status(202).end();
+      return;
+    }
     if(msg.method==='initialize'){
+      const requested=String(msg.params?.protocolVersion||'');
+      const legacy=['2025-11-25','2025-06-18','2025-03-26'];
+      const protocolVersion=legacy.includes(requested)?requested:'2025-11-25';
       if(account){
         const connectionId=await connectionFor(req,account,msg.params?.clientInfo||{name:'Cliente MCP'});
         res.setHeader('Mcp-Session-Id',await createMcpSession(account.id,connectionId));
       }
-      return json(res,200,rpcResult(msg.id,{protocolVersion:'2025-06-18',capabilities:{tools:{listChanged:false},resources:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.9.3',icons:[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}]}}));
+      return json(res,200,rpcResult(msg.id,{protocolVersion,capabilities:{tools:{listChanged:false},resources:{listChanged:false}},serverInfo:{name:'Codx Remote',version:'0.9.5',icons:[{src:BACKEND+'/assets/codx-symbol.png',mimeType:'image/png'}]}}));
     }
     if(account)await connectionFor(req,account);
     if(msg.method==='resources/list')return json(res,200,rpcResult(msg.id,{resources:[{uri:ACTIVITY_URI,name:'Codx Remote Activity',mimeType:'text/html;profile=mcp-app'}]}));
