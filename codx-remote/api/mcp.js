@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import {
-  hash, putState, getState, deleteState, json, readBody
+  hash, putState, getState, deleteState, json, readBody, bearer
 } from '../lib/state.js';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -105,6 +105,18 @@ async function loadAccountByKey(key) {
   return await getState('state/accounts/' + map.accountId + '.json');
 }
 
+async function loadAccountByBearer(token) {
+  if (!token) return null;
+  const session = await getState('state/oauth-access/' + hash(token) + '.json');
+  if (!session?.accountId) return null;
+  if (Date.now() > Number(session.expiresAt || 0)) {
+    await deleteState('state/oauth-access/' + hash(token) + '.json');
+    return null;
+  }
+  if (session.resource !== 'https://codx-remote-zrider.vercel.app/api/mcp') return null;
+  return await getState('state/accounts/' + session.accountId + '.json');
+}
+
 async function loadDevices(account) {
   const out = [];
   for (const id of account.devices || []) {
@@ -132,9 +144,17 @@ function error(id, code, message) {
 }
 
 export default async function handler(req, res) {
+  const token = bearer(req);
   const key = String(req.query.key || '');
-  const account = await loadAccountByKey(key);
-  if (!account) return json(res, 401, error(req.body?.id, -32001, 'Invalid Codx Remote MCP key.'));
+  const account = token ? await loadAccountByBearer(token) : await loadAccountByKey(key);
+
+  if (!account) {
+    res.setHeader(
+      'WWW-Authenticate',
+      'Bearer resource_metadata="https://codx-remote-zrider.vercel.app/.well-known/oauth-protected-resource", scope="codx.remote"'
+    );
+    return json(res, 401, error(req.body?.id, -32001, 'Codx Remote authentication required.'));
+  }
 
   if (req.method === 'GET') {
     const devices = await loadDevices(account);
@@ -155,7 +175,7 @@ export default async function handler(req, res) {
     return json(res, 200, result(msg.id, {
       protocolVersion: '2025-06-18',
       capabilities: { tools: { listChanged: false } },
-      serverInfo: { name: 'Codx Remote', version: '0.2.0' }
+      serverInfo: { name: 'Codx Remote', version: '0.3.0' }
     }));
   }
 
