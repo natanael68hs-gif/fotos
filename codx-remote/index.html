@@ -1,134 +1,18 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Codx Remote — seu PC no ChatGPT</title>
-  <meta name="description" content="Conecte o ChatGPT ao seu próprio computador usando MCP e um túnel seguro.">
-  <link rel="stylesheet" href="/style.css">
-</head>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Codx Remote — seu computador no chat</title><meta name="description" content="Conecte seu PC ao ChatGPT e Codex com um agente privado para arquivos, terminal e processos."><link rel="stylesheet" href="/style.css"></head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="#"><span class="brand-mark">C&gt;</span><span>Codx Remote</span></a>
-    <nav>
-      <a href="#como">Como funciona</a>
-      <a href="#instalar">Instalar</a>
-      <a href="#seguranca">Segurança</a>
-      <button class="linkbtn" id="manageTop">Manager</button>
-      <a class="btn small" href="#instalar">›_ Install</a>
-    </nav>
-  </header>
-
-  <main>
-    <section class="hero">
-      <div class="hero-copy">
-        <div class="pill">PRIVATE MCP • WINDOWS • CODX RELAY</div>
-        <h1>Use seu computador<br><span>direto pelo chat</span></h1>
-        <p>Codx Remote roda um agente próprio no seu PC e conecta ao seu MCP privado pela internet. Enquanto o PowerShell estiver aberto, o dispositivo fica online.</p>
-        <div class="actions">
-          <a class="btn" href="#instalar">Instalar agora <b>→</b></a>
-          <button class="btn ghost" id="manageHero">Manage device</button>
-        </div>
-        <div class="metrics">
-          <div><strong>1</strong><span>comando para iniciar</span></div>
-          <div><strong>0</strong><span>portas públicas no PC</span></div>
-          <div><strong>Ctrl+C</strong><span>desconecta na hora</span></div>
-        </div>
-      </div>
-
-      <div class="network-card">
-        <div class="clients">
-          <div class="node"><span>◉</span>ChatGPT</div>
-          <div class="node"><span>⌘</span>Codex</div>
-          <div class="node muted"><span>＋</span>MCP client</div>
-        </div>
-        <div class="lines"><i></i><i></i><i></i></div>
-        <div class="center-node">
-          <div class="logo">C&gt;</div>
-          <strong>Codx Remote</strong>
-          <small>no seu computador</small>
-          <em id="heroStatus">● Offline até iniciar</em>
-        </div>
-        <div class="lines down"><i></i><i></i><i></i></div>
-        <div class="tools">
-          <span>▣ Seus arquivos</span>
-          <span>›_ Terminal</span>
-          <span>⚙ Processos</span>
-        </div>
-      </div>
-    </section>
-
-    <section id="como" class="section">
-      <div class="eyebrow">COMO FUNCIONA</div>
-      <h2>Seu PC continua privado</h2>
-      <p class="lead">O agente roda localmente e consulta o relay Codx Remote por HTTPS. Não é necessário abrir porta no roteador.</p>
-      <div class="steps">
-        <article><b>01</b><h3>Instale</h3><p>Rode um único comando no PowerShell. O instalador prepara Node.js e baixa o agente próprio do Codx Remote.</p></article>
-        <article><b>02</b><h3>Conecte</h3><p>Na primeira execução, o PC é registrado automaticamente e recebe suas URLs privadas de MCP e Manager.</p></article>
-        <article><b>03</b><h3>Use no chat</h3><p>Adicione a URL MCP mostrada no terminal ao ChatGPT. Com o terminal aberto, o chat consegue usar as ferramentas do PC.</p></article>
-      </div>
-    </section>
-
-    <section id="instalar" class="section install">
-      <div class="eyebrow">INSTALL</div>
-      <h2>Um comando no PowerShell</h2>
-      <p class="lead">Abra o PowerShell normal e cole:</p>
-      <div class="commandbox">
-        <code id="installCommand">irm https://codx-remote-zrider.vercel.app/install.ps1 | iex</code>
-        <button id="copyInstall">Copiar</button>
-      </div>
-      <div class="note">
-        <strong>Na primeira vez:</strong> o agente registra o computador automaticamente e mostra a URL MCP e o link do Manager. Depois, o mesmo comando apenas inicia o dispositivo.
-      </div>
-      <div class="actions inline">
-        <a class="btn ghost" href="#manager">Abrir instruções do Manager</a>
-        <a class="btn ghost" href="https://chatgpt.com/plugins" target="_blank" rel="noreferrer">Abrir Plugins do ChatGPT</a>
-      </div>
-    </section>
-
-    <section id="manager" class="section manager">
-      <div class="eyebrow">MANAGER</div>
-      <h2>Controle local do dispositivo</h2>
-      <p class="lead">O agente mostra um link privado do Manager. Abra esse link para ver dispositivos, uso e status online/offline.</p>
-      <div class="device-card">
-        <div class="device-icon">▣</div>
-        <div>
-          <strong>Este computador</strong>
-          <span id="managerHint">Inicie o Codx Remote e abra o link Manager mostrado no terminal.</span>
-        </div>
-        <button class="btn small" id="managerRefresh">Atualizar</button>
-      </div>
-      <div class="grid2">
-        <article><h3>Status</h3><p>Online/offline, último sinal e quantidade de chamadas do dispositivo.</p></article>
-        <article><h3>Privacidade</h3><p>O link do Manager possui uma chave privada. Não compartilhe esse endereço.</p></article>
-      </div>
-    </section>
-
-    <section id="seguranca" class="section">
-      <div class="eyebrow">SEGURANÇA</div>
-      <h2>Feito para controle explícito</h2>
-      <div class="security-grid">
-        <div>✓ Sem serviço oculto ou inicialização automática.</div>
-        <div>✓ Fechou o PowerShell ou Ctrl+C: fica offline.</div>
-        <div>✓ Nenhuma porta de entrada precisa ficar aberta.</div>
-        <div>✓ Estado do relay armazenado criptografado no backend.</div>
-        <div>✓ Agente Windows próprio, sem depender do Desktop Commander.</div>
-        <div>✓ Manager privado com status e revogação de dispositivos.</div>
-      </div>
-    </section>
-
-    <section class="section faq">
-      <div class="eyebrow">IMPORTANTE</div>
-      <h2>Conta do ChatGPT e uso</h2>
-      <p class="lead">O site não recebe sua senha do ChatGPT. O agente cria uma URL MCP privada; essa URL é o que você conecta ao ChatGPT. Não compartilhe a URL MCP nem o link do Manager.</p>
-    </section>
-  </main>
-
-  <footer>
-    <strong>Codx Remote</strong>
-    <span>Local-first • MCP • Windows</span>
-  </footer>
-
-  <script src="/app.js"></script>
-</body>
-</html>
+<header class="nav"><a class="brand" href="/"><span class="logo-mark">C&gt;</span><span>Codx Remote</span></a><nav class="navlinks"><a href="#como">Como funciona</a><a href="/install">Install</a><a href="/login">Manage</a><a class="btn small" href="/install">›_ Instalar</a></nav></header>
+<main>
+<section class="wrap hero"><div><span class="badge"><span class="dot"></span> PRIVATE REMOTE MCP • WINDOWS</span><h1>Use seu computador<br><span>direto pelo chat</span></h1><p>Codx Remote conecta um PC autorizado ao ChatGPT, Codex e outros clientes MCP. Leia arquivos, trabalhe no terminal e acompanhe processos sem abrir portas no roteador.</p><div class="actions"><a class="btn" href="/install">Instalar agora →</a><a class="btn ghost" href="/login">Manage devices</a></div><div class="stats"><div><b>1 comando</b><span>para iniciar</span></div><div><b>HTTPS</b><span>sem porta pública</span></div><div><b>Ctrl+C</b><span>fica offline na hora</span></div></div></div>
+<div class="flow-card reveal">
+<div class="flow-node client1">◉ ChatGPT</div><div class="flow-node client2">⌘ Codex</div><div class="flow-node client3">＋ MCP client</div>
+<div class="wire w1"><span class="packet"></span><span class="packet reply"></span></div><div class="wire w2"><span class="packet"></span></div><div class="wire w3"><span class="packet"></span></div>
+<div class="core"><span class="logo-mark">C&gt;</span><strong>Codx Remote</strong><small>no seu computador</small><span class="core-status">● pronto para conectar</span></div>
+<div class="wire w4"><span class="packet"></span><span class="packet reply"></span></div><div class="wire w5"><span class="packet"></span></div><div class="wire w6"><span class="packet"></span></div>
+<div class="flow-node tool1">▣ Seus arquivos</div><div class="flow-node tool2">›_ Terminal</div><div class="flow-node tool3">⚙ Processos</div>
+</div></section>
+<section id="como" class="section"><div class="wrap"><div class="eyebrow">COMO FUNCIONA</div><h2>Do chat para o seu PC, com controle explícito.</h2><p class="lead">O agente roda somente enquanto a janela do PowerShell estiver aberta. O dashboard mostra quando cada dispositivo está online e permite desconectar ou revogar o acesso.</p>
+<div class="cards3"><article class="card reveal"><span class="num">01</span><h3>Instale</h3><p>Cole um único comando no PowerShell. O agente é baixado e iniciado automaticamente.</p></article><article class="card reveal"><span class="num">02</span><h3>Autorize</h3><p>Na primeira execução o navegador abre nosso site para criar sua conta e autorizar aquele PC.</p></article><article class="card reveal"><span class="num">03</span><h3>Use</h3><p>Depois do login, o plugin pode acessar somente os dispositivos autorizados pela sua conta.</p></article></div></div></section>
+<section class="section"><div class="wrap panel reveal"><div class="eyebrow">UM COMANDO</div><h2>PowerShell aberto = PC online.</h2><div class="command"><code>irm https://codx-remote-zrider.vercel.app/install.ps1 | iex</code><button data-copy="irm https://codx-remote-zrider.vercel.app/install.ps1 | iex">Copiar</button></div><div class="actions"><a class="btn" href="/install">Ver instalação</a><a class="btn ghost" href="/login">Abrir Manager</a></div></div></section>
+<section class="section"><div class="wrap"><div class="eyebrow">SEGURANÇA</div><h2>Você sabe quando o computador está acessível.</h2><div class="cards3"><article class="card reveal"><h3>Sem credenciais no terminal</h3><p>Tokens e links privados ficam no armazenamento local e nunca aparecem no banner do agente.</p></article><article class="card reveal"><h3>Conta + OAuth</h3><p>O ChatGPT usa autorização da sua conta Codx Remote, sem receber sua senha.</p></article><article class="card reveal"><h3>Desconexão imediata</h3><p>Feche o terminal, pressione Ctrl+C ou use o botão Desconectar no dashboard.</p></article></div></div></section>
+</main><footer><div class="wrap footer-inner"><strong>Codx Remote</strong><span>Private MCP • Windows • 2026</span></div></footer><script src="/app.js"></script></body></html>
