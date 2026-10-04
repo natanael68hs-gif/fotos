@@ -1,5 +1,9 @@
 {
-  "name": "codx-remote-site",
-  "version": "1.0.0",
-  "private": true
+  "name": "codx-remote",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@vercel/blob": "^1.1.1"
+  }
 }
