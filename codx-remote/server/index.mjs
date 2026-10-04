@@ -8,6 +8,7 @@ import {
 
 const PORT=Number(process.env.PORT||10000);
 const SITE=(process.env.PUBLIC_SITE_URL||'https://codx-remote-zrider.vercel.app').replace(/\/$/,'');
+const BACKEND=(process.env.PUBLIC_BACKEND_URL||'https://codx-remote-api-zrider.onrender.com').replace(/\/$/,'');
 const RESOURCE=SITE+'/api/mcp';
 const COOKIE='codx_session';
 const SESSION_MS=30*24*60*60*1000;
@@ -108,7 +109,7 @@ async function setupLink(accountId,deviceId){
   const t=token(32);
   await q('INSERT INTO setup_tokens(token_hash,account_id,device_id,expires_at,created_at) VALUES($1,$2,$3,$4,$5)',
     [sha(t),accountId,deviceId,now()+30*60*1000,now()]);
-  return SITE+'/authorize?setup='+encodeURIComponent(t);
+  return BACKEND+'/setup?token='+encodeURIComponent(t);
 }
 async function listDevices(accountId){
   const rows=(await q('SELECT * FROM devices WHERE account_id=$1 ORDER BY created_at ASC',[accountId])).rows;
@@ -185,7 +186,7 @@ app.post('/api/register',async(req,res)=>{
     json(res,200,{
       ok:true,createdAccount,accountSecret,deviceId,deviceSecret,
       authorizeUrl:authorized?SITE+'/dashboard':await setupLink(account.id,deviceId),
-      dashboardUrl:SITE+'/dashboard'
+      dashboardUrl:BACKEND+'/dashboard'
     });
   }catch(e){console.error(e);json(res,500,{error:'register_failed',detail:String(e.message||e)})}
 });
@@ -204,7 +205,7 @@ app.post('/api/device',async(req,res)=>{
     }
     if(action==='setup_url'){
       const account=await getAccount(d.account_id);
-      return json(res,200,{ok:true,authorized:!!account?.email,url:account?.email?SITE+'/dashboard':await setupLink(d.account_id,deviceId)});
+      return json(res,200,{ok:true,authorized:!!account?.email,url:account?.email?BACKEND+'/dashboard':await setupLink(d.account_id,deviceId)});
     }
     if(action==='rotate_links'){
       const account=await getAccount(d.account_id);
@@ -299,6 +300,74 @@ app.post('/api/dashboard-action',async(req,res)=>{
     }
     return json(res,400,{error:'unknown_action'});
   }catch(e){console.error(e);json(res,500,{error:'dashboard_action_failed'})}
+});
+
+
+function page(title,body){
+  return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+esc(title)+' — Codx Remote</title><style>'+
+  ':root{--bg:#070b12;--panel:#0f1726;--line:#293a55;--text:#f7f9fc;--muted:#8e9bb0;--blue:#4f8cff;--green:#37d99a;--red:#ff647c}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 70% 0,#18315f55 0,transparent 35%),var(--bg);color:var(--text);font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;min-height:100vh}.nav{height:70px;border-bottom:1px solid #ffffff10;display:flex;align-items:center;justify-content:space-between;padding:0 max(18px,calc((100vw - 1100px)/2));background:#070b12dd}.brand{font-weight:850}.wrap{width:min(1100px,calc(100% - 30px));margin:auto}.auth{min-height:calc(100vh - 70px);display:grid;place-items:center;padding:30px}.card{width:min(470px,100%);background:#0f1726;border:1px solid var(--line);border-radius:20px;padding:28px;box-shadow:0 30px 80px #0008}.card h1{margin:8px 0}.muted{color:var(--muted);line-height:1.55}.field{margin:14px 0}.field label{display:block;font-size:13px;color:#b4c0d1;margin-bottom:6px}.field input{width:100%;padding:12px;border-radius:10px;border:1px solid #30405b;background:#090e17;color:#fff}.btn{display:inline-flex;justify-content:center;align-items:center;width:100%;padding:12px 16px;border-radius:10px;border:1px solid #477fe3;background:linear-gradient(180deg,#538eff,#2e69df);color:#fff;font-weight:800;cursor:pointer;text-decoration:none}.btn.ghost{background:#111927;border-color:#33435f}.btn.danger{background:#752435;border-color:#a83d51}.msg{color:#ff9faf;min-height:22px}.badge{display:inline-flex;gap:7px;align-items:center;padding:7px 10px;border:1px solid #31425f;border-radius:99px;color:#bad2ff;font-size:11px;font-weight:800}.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 12px var(--green)}.dash{padding:42px 0}.top{display:flex;justify-content:space-between;gap:15px;align-items:center;flex-wrap:wrap}.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px}.metric,.device{background:#0f1726;border:1px solid var(--line);border-radius:16px;padding:20px}.metric b{font-size:32px}.devices{display:grid;gap:12px;margin-top:20px}.device{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center}.status.on{color:var(--green)}.status.off{color:#8e9bb0}.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto}.bar{height:9px;background:#1b2739;border-radius:99px;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;background:linear-gradient(90deg,#4f8cff,#60d5ff)}@media(max-width:700px){.grid{grid-template-columns:1fr}.device{grid-template-columns:1fr}}'+
+  '</style></head><body><header class="nav"><div class="brand">C&gt; Codx Remote</div><a href="'+SITE+'" style="color:#9fbfff;text-decoration:none">Site</a></header>'+body+'</body></html>';
+}
+
+app.get('/setup',async(req,res)=>{
+  const tokenValue=String(req.query.token||'');
+  const setup=(await q('SELECT * FROM setup_tokens WHERE token_hash=$1',[sha(tokenValue)])).rows[0];
+  if(!setup||now()>Number(setup.expires_at||0)){
+    return res.status(400).type('html').send(page('Link expirado','<main class="auth"><div class="card"><h1>Link expirado</h1><p class="muted">Execute novamente o agente Codx Remote para gerar uma nova autorização.</p></div></main>'));
+  }
+  return res.type('html').send(page('Autorizar PC','<main class="auth"><form class="card" method="post" action="/setup"><span class="badge"><span class="dot"></span> PC DETECTADO</span><h1>Autorize este computador</h1><p class="muted">Crie sua conta Codx Remote para vincular este PC.</p><input type="hidden" name="token" value="'+esc(tokenValue)+'"><div class="field"><label>Nome</label><input name="name" required></div><div class="field"><label>E-mail</label><input type="email" name="email" required></div><div class="field"><label>Senha</label><input type="password" name="password" minlength="10" required></div><button class="btn">Autorizar e abrir Dashboard</button></form></main>'));
+});
+
+app.post('/setup',async(req,res)=>{
+  try{
+    const tokenValue=String(req.body?.token||'');
+    const setup=(await q('SELECT * FROM setup_tokens WHERE token_hash=$1',[sha(tokenValue)])).rows[0];
+    if(!setup||now()>Number(setup.expires_at||0))return res.status(400).send('Link expirado.');
+    let account=await getAccount(setup.account_id);
+    const existing=await accountByEmail(req.body?.email);
+    if(existing&&existing.id!==account.id)return res.status(409).type('html').send(page('E-mail já cadastrado','<main class="auth"><div class="card"><h1>E-mail já cadastrado</h1><p class="muted">Use outro e-mail por enquanto ou entre na sua conta existente.</p><a class="btn" href="/login">Entrar</a></div></main>'));
+    account=await setCredentials(account,req.body?.name,req.body?.email,req.body?.password);
+    await q('DELETE FROM setup_tokens WHERE token_hash=$1',[sha(tokenValue)]);
+    await createSession(req,res,account.id);
+    return res.redirect(302,'/dashboard');
+  }catch(e){
+    console.error(e);
+    return res.status(400).type('html').send(page('Erro','<main class="auth"><div class="card"><h1>Não foi possível autorizar</h1><p class="muted">'+esc(String(e.message||e))+'</p></div></main>'));
+  }
+});
+
+app.get('/login',(req,res)=>res.type('html').send(page('Login','<main class="auth"><form class="card" method="post" action="/login"><h1>Entrar</h1><p class="muted">Acesse seus dispositivos Codx Remote.</p><div class="field"><label>E-mail</label><input type="email" name="email" required></div><div class="field"><label>Senha</label><input type="password" name="password" required></div><button class="btn">Entrar</button></form></main>')));
+
+app.post('/login',async(req,res)=>{
+  const a=await verifyLogin(req.body?.email,req.body?.password);
+  if(!a)return res.status(401).type('html').send(page('Login','<main class="auth"><div class="card"><h1>Login incorreto</h1><p class="muted">Confira e-mail e senha.</p><a class="btn" href="/login">Tentar novamente</a></div></main>'));
+  await createSession(req,res,a.id);
+  res.redirect(302,'/dashboard');
+});
+
+app.post('/logout',async(req,res)=>{await clearSession(req,res);res.redirect(302,'/login')});
+
+app.get('/dashboard',async(req,res)=>{
+  let a=await sessionAccount(req);
+  if(!a)return res.redirect(302,'/login');
+  a=await normalizeUsage(a);
+  const devices=await listDevices(a.id);
+  const pct=Math.min(100,Math.round(Number(a.monthly_tool_calls||0)/Math.max(1,Number(a.monthly_limit||500))*100));
+  const rows=devices.map(d=>'<div class="device"><div><h3 style="margin:0 0 7px">'+esc(d.deviceName)+' <span class="status '+(d.online?'on':'off')+'">'+(d.online?'● Online':'○ Offline')+'</span></h3><div class="muted" style="font-size:13px">ID: '+esc(d.deviceId)+'<br>Chamadas: '+d.toolCalls+' • Último sinal: '+(d.lastSeen?new Date(d.lastSeen).toLocaleString('pt-BR'):'-')+'</div></div><div class="actions">'+(d.revoked?'Revogado':'<form method="post" action="/dashboard/device"><input type="hidden" name="deviceId" value="'+esc(d.deviceId)+'"><button class="btn ghost" name="action" value="disconnect">Desconectar</button><button class="btn danger" name="action" value="revoke">Revogar</button></form>')+'</div></div>').join('');
+  const body='<main class="wrap dash"><div class="top"><div><div class="badge"><span class="dot"></span> CONTA ATIVA</div><h1>Olá, '+esc(a.name||a.email?.split('@')[0]||'Codx User')+'</h1><p class="muted">'+esc(a.email||'')+' • '+esc(a.plan||'Free')+'</p></div><form method="post" action="/logout"><button class="btn ghost" style="width:auto">Sair</button></form></div><div class="grid"><div class="metric"><div class="muted">Uso mensal</div><b>'+Number(a.monthly_tool_calls||0)+' / '+Number(a.monthly_limit||500)+'</b><div class="bar"><i style="width:'+pct+'%"></i></div></div><div class="metric"><div class="muted">Total histórico</div><b>'+Number(a.total_tool_calls||0)+'</b><p class="muted">chamadas MCP</p></div></div><h2 style="margin-top:38px">Seus computadores</h2><div class="devices">'+(rows||'<div class="device">Nenhum dispositivo conectado.</div>')+'</div></main>';
+  res.type('html').send(page('Dashboard',body));
+});
+
+app.post('/dashboard/device',async(req,res)=>{
+  const a=await sessionAccount(req);
+  if(!a)return res.redirect(302,'/login');
+  const id=String(req.body?.deviceId||''),action=String(req.body?.action||'');
+  const d=(await q('SELECT * FROM devices WHERE id=$1 AND account_id=$2',[id,a.id])).rows[0];
+  if(d){
+    if(action==='disconnect')await q('UPDATE devices SET disconnect_requested=TRUE WHERE id=$1',[id]);
+    if(action==='revoke')await q('UPDATE devices SET revoked=TRUE WHERE id=$1',[id]);
+  }
+  res.redirect(302,'/dashboard');
 });
 
 app.get('/.well-known/oauth-protected-resource',(_req,res)=>json(res,200,{
