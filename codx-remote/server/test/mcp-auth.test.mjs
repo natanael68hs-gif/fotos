@@ -23,9 +23,12 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     method:'POST',headers:{'Content-Type':'application/json',...(credential?{Authorization:'Bearer '+credential}:{})},
     body:JSON.stringify({jsonrpc:'2.0',id:1,method,params:{name:'list_devices',arguments:{}}})
   });
-  await t.test('anonymous and incorrect keys cannot initialize or enumerate tools',async()=>{
-    for(const credential of [undefined,'wrong-key'])for(const method of ['initialize','tools/list','tools/call']){
-      const r=await rpc(credential,method);assert.equal(r.status,401);assert.match(r.headers.get('www-authenticate'),/resource_metadata/);
+  await t.test('anonymous clients discover tools but cannot access accounts or devices',async()=>{
+    for(const credential of [undefined,'wrong-key']){
+      for(const method of ['initialize','tools/list'])assert.equal((await rpc(credential,method)).status,200);
+      const r=await rpc(credential);assert.equal(r.status,200);assert.match(r.headers.get('www-authenticate'),/resource_metadata/);
+      const result=(await r.json()).result;assert.equal(result.isError,true);assert.ok(result._meta['mcp/www_authenticate']);
+      assert.equal(JSON.stringify(result).includes('device-0'),false);
     }
   });
   await t.test('permanent keys initialize and list only their own devices',async()=>{
@@ -40,7 +43,8 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     await q('INSERT INTO oauth_access(token_hash,account_id,client_id,resource,scope,expires_at) VALUES($1,$2,$3,$4,$5,$6)',
       [sha('oauth-test-token'),'account-0','client',resource,'codx.remote',Date.now()+60000]);
     assert.equal((await rpc('oauth-test-token')).status,200);
-    assert.equal((await fetch(base+'/mcp?key='+keys[0])).status,200);
+    const legacy=await fetch(base+'/mcp?key='+keys[0],{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({jsonrpc:'2.0',id:2,method:'tools/call',params:{name:'list_devices',arguments:{}}})});
+    assert.equal(legacy.status,200);assert.equal((await legacy.json()).result.isError,undefined);
   });
   await t.test('device configuration requires an authorized, non-revoked device',async()=>{
     const deviceConfig=secret=>fetch(base+'/api/device?action=mcp_config',{
@@ -85,7 +89,7 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     assert.equal((await rpc(keys[0])).status,200);
     headers.Origin='https://codx-remote-api-zrider.onrender.com';
     assert.equal((await fetch(base+'/dashboard/mcp-key/rotate',{method:'POST',headers,redirect:'manual'})).status,303);
-    assert.equal((await rpc(keys[0])).status,401);
+    assert.equal((await (await rpc(keys[0])).json()).result.isError,true);
     assert.equal((await rpc(keys[1])).status,200);
     const r=await fetch(base+'/dashboard/mcp-config',{headers});
     const key=(await r.json()).mcpServers.codxRemote.headers.Authorization.slice(7);
@@ -116,7 +120,8 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     const headers={Cookie:'codx_session=dashboard-session',Origin:'https://codx-remote-api-zrider.onrender.com','Content-Type':'application/json'};
     const info=await (await fetch(base+'/api/dashboard',{headers})).json();const client=info.connections.find(c=>c.name==='ChatGPT');assert.ok(client);assert.equal(client.kind,'chatgpt');assert.equal(client.authorized,true);
     const invalid=await fetch(base+'/api/dashboard/settings',{method:'POST',headers,body:JSON.stringify({action:'revoke_client',connectionId:'foreign-id'})});assert.equal(invalid.status,404);
-    const revoked=await fetch(base+'/api/dashboard/settings',{method:'POST',headers,body:JSON.stringify({action:'revoke_client',connectionId:client.id})});assert.equal(revoked.status,200);assert.equal((await call('tools/list')).status,401);
+    const revoked=await fetch(base+'/api/dashboard/settings',{method:'POST',headers,body:JSON.stringify({action:'revoke_client',connectionId:client.id})});assert.equal(revoked.status,200);
+    assert.equal((await (await fetch(base+'/mcp',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer ui-oauth'},body:JSON.stringify({jsonrpc:'2.0',id:92,method:'tools/call',params:{name:'list_devices',arguments:{}}})})).json()).result.isError,true);
     assert.equal((await rpc(keys[1])).status,200);
   });
   await t.test('branded activity resources and usage history stay private and do not consume quota',async()=>{
@@ -147,5 +152,122 @@ test('personal key connection, account isolation, rotation and OAuth compatibili
     const rpcResult=await (await resultPromise).json();assert.equal(rpcResult.result.content[0].text,'private-file-content');
     const info=await (await fetch(base+'/api/dashboard',{headers:{Cookie:'codx_session=dashboard-session'}})).json();assert.equal(info.events[0].tool,'read_file');assert.equal(info.events[0].durationMs,420);assert.equal(info.account.monthlyToolCalls,1);
     const rendered=JSON.stringify(info);assert.equal(rendered.includes('private-file-content'),false);assert.equal(rendered.includes('private-sensitive-file'),false);
+  });
+  await t.test('one-click OAuth consent uses the browser account and preserves PKCE and refresh',async()=>{
+    const crypto=await import('node:crypto');
+    const verifier='test-pkce-verifier-that-is-long-enough-for-oauth-123456789';
+    const challenge=crypto.createHash('sha256').update(verifier).digest('base64url');
+    const callback='http://127.0.0.1:50820/callback';
+    const registered=await fetch(base+'/oauth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({redirect_uris:[callback],client_name:'Codex <one-click>'})});
+    assert.equal(registered.status,201);
+    const client=(await registered.json()).client_id;
+    const params=new URLSearchParams({client_id:client,redirect_uri:callback,response_type:'code',code_challenge:challenge,code_challenge_method:'S256',state:'test-state',scope:'codx.remote',resource});
+    const authPath='/oauth/authorize?'+params;
+    for(let i=0;i<2;i++)await q('INSERT INTO sessions(token_hash,account_id,expires_at,created_at) VALUES($1,$2,$3,$4)',[sha('consent-session-'+i),'account-'+i,Date.now()+60000,Date.now()]);
+    const cookie=i=>'codx_session=consent-session-'+i;
+    const consentPage=async i=>{
+      const response=await fetch(base+authPath,{headers:{Cookie:cookie(i)}});
+      assert.equal(response.status,200);
+      assert.equal(response.headers.get('x-frame-options'),'DENY');
+      const html=await response.text();
+      assert.match(html,/Autorizar conexão/);assert.match(html,/Codex &lt;one-click&gt;/);
+      assert.equal(/type="(?:email|password)"/.test(html),false);
+      for(const key of (await q('SELECT mcp_key FROM accounts')).rows)assert.equal(html.includes(key.mcp_key),false);
+      return html.match(/name="consent_ticket" value="([^"]+)"/)[1];
+    };
+    const approve=(ticket,i=0,extra={},origin='https://codx-remote-api-zrider.onrender.com')=>fetch(base+'/oauth/authorize',{method:'POST',redirect:'manual',headers:{Cookie:cookie(i),Origin:origin,'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({consent_ticket:ticket,...extra})});
+    const exchange=p=>fetch(base+'/oauth/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams(p)});
+    const anonymous=await (await fetch(base+authPath)).text();
+    assert.match(anonymous,/Entrar para autorizar/);assert.equal(/type="(?:email|password)"/.test(anonymous),false);
+    const loginLink=anonymous.match(/href="(\/login\?next=[^"]+)"/)[1].replaceAll('&amp;','&');
+    const returnUrl=new URL(new URL(loginLink,base).searchParams.get('next'),base);
+    assert.equal(returnUrl.pathname,'/oauth/authorize');
+    for(const [name,value] of params)assert.equal(returnUrl.searchParams.get(name),value);
+    assert.equal((await fetch(base+'/oauth/authorize',{method:'POST',body:new URLSearchParams({email:'account-a@example.test',password:'ignored'})})).status,401);
+    const ticket=await consentPage(0);
+    assert.equal((await approve(ticket,1)).status,403);
+    assert.equal((await approve(ticket,0,{},'https://evil.example')).status,403);
+    assert.equal((await approve('invented-ticket')).status,403);
+    const approval=await approve(ticket,0,{account_id:'account-1',redirect_uri:'https://evil.example',state:'tampered'});
+    assert.equal(approval.status,303);
+    const target=new URL(approval.headers.get('location'));
+    assert.equal(target.origin,'http://127.0.0.1:50820');assert.equal(target.searchParams.get('state'),'test-state');assert.equal(target.searchParams.get('iss'),'https://codx-remote-api-zrider.onrender.com');
+    assert.equal((await approve(ticket)).status,403);
+    const tokenParams={grant_type:'authorization_code',client_id:client,redirect_uri:callback,code:target.searchParams.get('code'),code_verifier:verifier};
+    assert.equal((await exchange({...tokenParams,code_verifier:'wrong'})).status,400);
+    const issued=await exchange(tokenParams);assert.equal(issued.status,200);
+    const credentials=await issued.json();assert.ok(credentials.refresh_token);
+    const devices=JSON.parse((await (await rpc(credentials.access_token)).json()).result.content[0].text);
+    assert.deepEqual(devices.map(d=>d.deviceId),['device-0']);
+    assert.equal((await exchange(tokenParams)).status,400);
+    const refreshParams={grant_type:'refresh_token',client_id:client,refresh_token:credentials.refresh_token};
+    const refreshed=await exchange(refreshParams);assert.equal(refreshed.status,200);
+    assert.equal((await rpc((await refreshed.json()).access_token)).status,200);
+    assert.equal((await exchange(refreshParams)).status,400);
+    const other=await approve(await consentPage(1),1);
+    const otherToken=await (await exchange({...tokenParams,code:new URL(other.headers.get('location')).searchParams.get('code')})).json();
+    assert.notEqual(otherToken.access_token,credentials.access_token);
+    assert.deepEqual(JSON.parse((await (await rpc(otherToken.access_token)).json()).result.content[0].text).map(d=>d.deviceId),['device-1']);
+    const expired=await consentPage(0);await q('UPDATE oauth_consents SET expires_at=$1 WHERE token_hash=$2',[Date.now()-1000,sha(expired)]);
+    assert.equal((await approve(expired)).status,403);
+    const switched=await consentPage(0);
+    await q('UPDATE sessions SET account_id=$1 WHERE token_hash=$2',['account-1',sha('consent-session-0')]);
+    assert.equal((await approve(switched)).status,403);
+  });
+  await t.test('login returns to consent without accepting an external redirect',async()=>{
+    const {passwordDigest}=await import('../utils.mjs');
+    const password='test-login-password-only';const digest=passwordDigest(password);
+    await q('UPDATE accounts SET password_salt=$1,password_hash=$2 WHERE id=$3',[digest.salt,digest.hash,'account-0']);
+    const login=next=>fetch(base+'/login',{method:'POST',redirect:'manual',body:new URLSearchParams({email:'account-a@example.test',password,next})});
+    const next='/oauth/authorize?client_id=example&state=continue';
+    const valid=await login(next);assert.equal(valid.status,303);assert.equal(valid.headers.get('location'),next);assert.match(valid.headers.get('set-cookie'),/HttpOnly; Secure; SameSite=Lax/);
+    for(const next of ['https://evil.example','//evil.example','/oauth/authorize?state=x#fragment','/dashboard'])assert.equal((await login(next)).headers.get('location'),'/dashboard');
+    const incorrect=await fetch(base+'/login',{method:'POST',body:new URLSearchParams({email:'account-a@example.test',password:'wrong',next})});
+    assert.equal(incorrect.status,401);assert.match(await incorrect.text(),/next=%2Foauth%2Fauthorize/);
+  });
+  await t.test('account reset is one-time, snapshots old data and creates only the requested test account',async()=>{
+    const {resetAccounts}=await import('../account-reset.mjs');
+    const config={action:'reset_accounts',requestId:'12345678-1234-1234-1234-123456789abc',email:'codxremote@example.com',password:'teste1234'};
+    const result=await resetAccounts(config,pool);
+    assert.equal(result.status,'completed');assert.equal(result.previousAccounts,2);assert.equal(result.previousDevices,2);
+    const accounts=(await q('SELECT * FROM accounts')).rows;assert.equal(accounts.length,1);assert.equal(accounts[0].email,config.email);
+    assert.equal((await q('SELECT * FROM devices')).rows.length,0);assert.equal((await q('SELECT * FROM oauth_access')).rows.length,0);
+    const archive=JSON.parse((await q('SELECT snapshot_json FROM admin_account_resets WHERE request_id=$1',[config.requestId])).rows[0].snapshot_json);
+    assert.equal(archive.accounts.length,2);assert.equal(archive.devices.length,2);
+    assert.equal((await resetAccounts(config,pool)).status,'already_completed');
+    const login=await fetch(base+'/login',{method:'POST',redirect:'manual',body:new URLSearchParams({email:config.email,password:config.password})});assert.equal(login.status,303);
+    const cookie=login.headers.get('set-cookie').split(';')[0];
+    const response=await fetch(base+'/api/dashboard',{headers:{Cookie:cookie}});assert.equal(response.status,200);assert.deepEqual((await response.json()).devices,[]);
+    assert.equal((await (await rpc(keys[1])).json()).result.isError,true);
+    await assert.rejects(resetAccounts({...config,requestId:'invalid'},pool),/invalid_account_reset_request/);
+  });
+  await t.test('any newly installed desktop can be paired to the existing test account with session consent',async()=>{
+    const {resetAccounts}=await import('../account-reset.mjs');
+    const login=await fetch(base+'/login',{method:'POST',redirect:'manual',body:new URLSearchParams({email:'codxremote@example.com',password:'teste1234'})});
+    const cookie=login.headers.get('set-cookie').split(';')[0];
+    for(const name of ['DESKTOP-ONE','DESKTOP-TWO']){
+      const registered=await (await fetch(base+'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deviceName:name})})).json();
+      const setupUrl=new URL(registered.authorizeUrl);
+      const setupPath=setupUrl.pathname+setupUrl.search;
+      const unpaired=await (await fetch(base+setupPath)).text();assert.match(unpaired,/Já tenho conta/);
+      const html=await (await fetch(base+setupPath,{headers:{Cookie:cookie}})).text();assert.match(html,/Vincular este computador/);assert.equal(/type="(?:email|password)"/.test(html),false);
+      const consent=html.match(/name="pairing_consent" value="([^"]+)"/)[1];
+      const pair=(token=consent,session=cookie)=>fetch(base+'/setup',{method:'POST',redirect:'manual',headers:{Cookie:session,Origin:'https://codx-remote-api-zrider.onrender.com'},body:new URLSearchParams({action:'pair',token:setupUrl.searchParams.get('token'),pairing_consent:token})});
+      assert.equal((await pair('wrong')).status,403);assert.equal((await pair(consent,'')).status,401);
+      assert.equal((await pair()).status,303);assert.equal((await pair()).status,400);
+      const account=(await q('SELECT * FROM accounts')).rows;assert.equal(account.length,1);
+      const device=(await q('SELECT * FROM devices WHERE id=$1',[registered.deviceId])).rows[0];assert.equal(device.account_id,account[0].id);
+      const exported=await (await fetch(base+'/api/device?action=mcp_config',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+registered.deviceSecret},body:JSON.stringify({deviceId:registered.deviceId})})).json();
+      assert.equal(exported.config.mcpServers.codxRemote.headers.Authorization,'Bearer '+account[0].mcp_key);
+      const claimedToken='claimed-'+name;
+      await q('INSERT INTO setup_tokens(token_hash,account_id,device_id,expires_at,created_at) VALUES($1,$2,$3,$4,$5)',[sha(claimedToken),account[0].id,device.id,Date.now()+60000,Date.now()]);
+      const claimed=await (await fetch(base+'/setup?token='+claimedToken,{headers:{Cookie:cookie}})).text();
+      const proof=claimed.match(/name="pairing_consent" value="([^"]+)"/)[1];
+      const stealing=await fetch(base+'/setup',{method:'POST',redirect:'manual',headers:{Cookie:cookie,Origin:'https://codx-remote-api-zrider.onrender.com'},body:new URLSearchParams({action:'pair',token:claimedToken,pairing_consent:proof})});
+      assert.equal(stealing.status,403);
+    }
+    const info=await (await fetch(base+'/api/dashboard',{headers:{Cookie:cookie}})).json();assert.equal(info.devices.length,2);
+    assert.equal((await resetAccounts({action:'reset_accounts',requestId:'12345678-1234-1234-1234-123456789abc',email:'codxremote@example.com',password:'teste1234'},pool)).status,'already_completed');
+    assert.equal((await q('SELECT * FROM devices')).rows.length,2);
   });
 });

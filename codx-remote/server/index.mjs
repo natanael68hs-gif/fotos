@@ -3,7 +3,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
-import { q, initDb } from './db.mjs';
+import { q, initDb, pool } from './db.mjs';
+import { runRequestedAccountReset } from './account-reset.mjs';
 import { dashboardHtml, dashboardData, connectionFor, createMcpSession, activity } from './dashboard.mjs';
 import { ACTIVITY_URI, ACTIVITY_META, activityResource } from './activity-widget.mjs';
 import {
@@ -355,13 +356,22 @@ function page(title,body,navAction=''){
   return '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#080c13"><title>'+esc(title)+' — Codx Remote</title><link rel="icon" href="/assets/codx-symbol.png"><link rel="stylesheet" href="/assets/redesign.css?v=0.9.0"></head><body><header class="site-nav"><div class="nav-inner"><a class="brand" href="'+MARKETING_SITE+'"><img class="brand-mark" src="/assets/codx-symbol.png" alt=""><img class="brand-name" src="/assets/codx-wordmark.png" alt="Codx Remote"></a><div class="nav-side">'+action+'</div></div></header>'+body+'<script src="/assets/redesign.js?v=0.9.0" type="module"></script></body></html>';
 }
 
+function pairingConsent(req,setupToken){
+  return crypto.createHmac('sha256',parseCookies(req)[COOKIE]||'').update('pair-device:'+setupToken).digest('hex');
+}
 app.get('/setup',async(req,res)=>{
   const tokenValue=String(req.query.token||'');
   const setup=(await q('SELECT * FROM setup_tokens WHERE token_hash=$1',[sha(tokenValue)])).rows[0];
   if(!setup||now()>Number(setup.expires_at||0)){
     return res.status(400).type('html').send(page('Link expirado','<main class="auth-shell"><div class="auth-card"><span class="eyebrow">AUTORIZAÇÃO</span><h1>Link expirado</h1><p>Execute novamente o agente Codx Remote para gerar uma nova autorização.</p><a class="btn secondary" href="/install">Voltar para Install</a></div></main>'));
   }
-  return res.type('html').send(page('Autorizar PC','<main class="auth-shell"><form class="auth-card" method="post" action="/setup"><span class="eyebrow"><span class="live-dot"></span> PC DETECTADO</span><h1>Autorize este computador</h1><p>Crie sua conta Codx Remote para vincular este PC e abrir o dashboard.</p><input type="hidden" name="token" value="'+esc(tokenValue)+'"><div class="field"><label for="name">Nome</label><input id="name" name="name" autocomplete="name" required></div><div class="field"><label for="email">E-mail</label><input id="email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="password">Senha</label><input id="password" type="password" name="password" minlength="10" autocomplete="new-password" required></div><button class="btn" style="width:100%">Autorizar e abrir Dashboard</button><div class="auth-links">Este dispositivo será vinculado somente à sua conta.</div></form></main>','<a class="nav-manage" href="'+MARKETING_SITE+'">Site</a>'));
+  const signedIn=await sessionAccount(req);
+  if(signedIn){
+    const device=await deviceById(setup.device_id);
+    return res.type('html').send(page('Vincular computador','<main class="auth-shell"><form class="auth-card" method="post" action="/setup"><span class="eyebrow"><span class="live-dot"></span> PC DETECTADO</span><h1>Vincule este computador.</h1><p><strong>'+esc(device?.device_name||'Seu desktop')+'</strong> ficará disponível para os assistentes conectados à sua conta.</p><p class="setting-help">Conta: '+esc(signedIn.email||signedIn.name||'Codx Remote')+'</p><input type="hidden" name="action" value="pair"><input type="hidden" name="token" value="'+esc(tokenValue)+'"><input type="hidden" name="pairing_consent" value="'+pairingConsent(req,tokenValue)+'"><button class="btn" style="width:100%">Vincular este computador</button></form></main>'));
+  }
+  const loginLink='/login?next='+encodeURIComponent('/setup?token='+encodeURIComponent(tokenValue));
+  return res.type('html').send(page('Autorizar PC','<main class="auth-shell"><form class="auth-card" method="post" action="/setup"><span class="eyebrow"><span class="live-dot"></span> PC DETECTADO</span><h1>Autorize este computador</h1><p>Crie sua conta Codx Remote para vincular este PC e abrir o dashboard.</p><a class="btn secondary" style="width:100%;margin-bottom:20px" href="'+esc(loginLink)+'">Já tenho conta — vincular computador</a><input type="hidden" name="token" value="'+esc(tokenValue)+'"><div class="field"><label for="name">Nome</label><input id="name" name="name" autocomplete="name" required></div><div class="field"><label for="email">E-mail</label><input id="email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="password">Senha</label><input id="password" type="password" name="password" minlength="10" autocomplete="new-password" required></div><button class="btn" style="width:100%">Autorizar e abrir Dashboard</button><div class="auth-links">Este dispositivo será vinculado somente à sua conta.</div></form></main>','<a class="nav-manage" href="'+MARKETING_SITE+'">Site</a>'));
 });
 
 app.post('/setup',async(req,res)=>{
@@ -370,6 +380,19 @@ app.post('/setup',async(req,res)=>{
     const setup=(await q('SELECT * FROM setup_tokens WHERE token_hash=$1',[sha(tokenValue)])).rows[0];
     if(!setup||now()>Number(setup.expires_at||0))return res.status(400).send('Link expirado.');
     let account=await getAccount(setup.account_id);
+    if(req.body?.action==='pair'){
+      const target=await sessionAccount(req);
+      if(!target)return res.status(401).send('Entre na sua conta para vincular o computador.');
+      if(req.get('origin')!==BACKEND||String(req.body?.pairing_consent||'')!==pairingConsent(req,tokenValue))return res.status(403).send('invalid_consent');
+      if(!account||account.email||!setup.device_id)return res.status(403).send('Este computador já possui uma conta.');
+      const sourceId=account.id;
+      const used=await q('DELETE FROM setup_tokens WHERE token_hash=$1 RETURNING token_hash',[sha(tokenValue)]);
+      if(!used.rows.length)return res.status(400).send('Link já utilizado.');
+      const paired=await q('UPDATE devices SET account_id=$1 WHERE id=$2 AND account_id=$3 AND revoked=FALSE RETURNING id',[target.id,setup.device_id,sourceId]);
+      if(!paired.rows.length)return res.status(400).send('Computador indisponível.');
+      if(!(await q('SELECT id FROM devices WHERE account_id=$1',[sourceId])).rows.length)await q('DELETE FROM accounts WHERE id=$1',[sourceId]);
+      return res.redirect(303,'/dashboard');
+    }
     const existing=await accountByEmail(req.body?.email);
     if(existing&&existing.id!==account.id)return res.status(409).type('html').send(page('E-mail já cadastrado','<main class="auth"><div class="card"><h1>E-mail já cadastrado</h1><p class="muted">Use outro e-mail por enquanto ou entre na sua conta existente.</p><a class="btn" href="/login">Entrar</a></div></main>'));
     account=await setCredentials(account,req.body?.name,req.body?.email,req.body?.password);
@@ -404,13 +427,23 @@ app.post('/register',async(req,res)=>{
   }
 });
 
-app.get('/login',(req,res)=>res.type('html').send(page('Login','<main class="auth-shell"><form class="auth-card" method="post" action="/login"><span class="eyebrow">BEM-VINDO DE VOLTA</span><h1>Entrar no Codx Remote</h1><p>Acesse seus dispositivos e continue de onde parou.</p><div class="field"><label for="email">E-mail</label><input id="email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="password">Senha</label><input id="password" type="password" name="password" autocomplete="current-password" required></div><button class="btn" style="width:100%">Entrar</button><div class="auth-links">Ainda não tem conta? <a href="/register">Criar conta</a></div></form></main>','<a class="nav-manage" href="/register">Criar conta</a>')));
+function authorizationReturn(value){
+  if(typeof value!=='string'||!['/oauth/authorize?','/setup?'].some(prefix=>value.startsWith(prefix))||value.includes('\\'))return '/dashboard';
+  const url=new URL(value,BACKEND);
+  return url.origin===BACKEND&&['/oauth/authorize','/setup'].includes(url.pathname)&&!url.hash?url.pathname+url.search:'/dashboard';
+}
+app.get('/login',async(req,res)=>{
+  const next=authorizationReturn(req.query.next);
+  if(next!=='/dashboard'&&await sessionAccount(req))return res.redirect(303,next);
+  return res.type('html').send(page('Login','<main class="auth-shell"><form class="auth-card" method="post" action="/login"><input type="hidden" name="next" value="'+esc(next)+'"><span class="eyebrow">BEM-VINDO DE VOLTA</span><h1>Entrar no Codx Remote</h1><p>Acesse seus dispositivos e continue de onde parou.</p><div class="field"><label for="email">E-mail</label><input id="email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="password">Senha</label><input id="password" type="password" name="password" autocomplete="current-password" required></div><button class="btn" style="width:100%">Entrar</button><div class="auth-links">Ainda não tem conta? <a href="/register">Criar conta</a></div></form></main>','<a class="nav-manage" href="/register">Criar conta</a>'));
+});
 
 app.post('/login',async(req,res)=>{
+  const next=authorizationReturn(req.body?.next);
   const a=await verifyLogin(req.body?.email,req.body?.password);
-  if(!a)return res.status(401).type('html').send(page('Login','<main class="auth"><div class="card"><h1>Login incorreto</h1><p class="muted">Confira e-mail e senha.</p><a class="btn" href="/login">Tentar novamente</a></div></main>'));
+  if(!a)return res.status(401).type('html').send(page('Login','<main class="auth"><div class="card"><h1>Login incorreto</h1><p class="muted">Confira e-mail e senha.</p><a class="btn" href="/login?next='+esc(encodeURIComponent(next))+'">Tentar novamente</a></div></main>'));
   await createSession(req,res,a.id);
-  res.redirect(302,'/dashboard');
+  res.redirect(303,next);
 });
 
 app.post('/logout',async(req,res)=>{await clearSession(req,res);res.redirect(302,'/login')});
@@ -544,18 +577,45 @@ async function validateAuthParams(p){
   if(resource!==RESOURCE)return {error:'invalid_target'};
   return {client,redirect,resource,scope:String(p.scope||'codx.remote')};
 }
-function loginHtml(p,msg=''){
+function authorizationPath(p){
   const names=['client_id','redirect_uri','response_type','code_challenge','code_challenge_method','state','resource','scope'];
-  const hidden=names.map(n=>'<input type="hidden" name="'+n+'" value="'+esc(p[n]||'')+'">').join('');
-  return page('Autorizar conexão','<main class="auth-shell"><form class="auth-card" method="post"><span class="eyebrow">CONEXÃO AUTORIZADA</span><h1>Seu assistente, conectado.</h1><p>Autorize este cliente MCP a usar os computadores da sua conta Codx Remote.</p>'+ (msg?'<p role="alert" style="color:#ff9faf">'+esc(msg)+'</p>':'')+hidden+'<div class="field"><label for="oauth-email">E-mail</label><input id="oauth-email" type="email" name="email" autocomplete="email" required></div><div class="field"><label for="oauth-password">Senha</label><input id="oauth-password" type="password" name="password" autocomplete="current-password" required></div><button class="btn" style="width:100%">Autorizar conexão</button><p class="setting-help">O acesso permanece vinculado à sua conta. Gerencie suas conexões pelo dashboard.</p></form></main>');
+  return '/oauth/authorize?'+new URLSearchParams(names.map(n=>[n,String(p[n]||'')])).toString();
 }
-app.all('/oauth/authorize',async(req,res)=>{
+function consentHtml(account,client,ticket){
+  return page('Autorizar conexão','<main class="auth-shell"><form class="auth-card" method="post" action="/oauth/authorize"><span class="eyebrow"><span class="live-dot"></span> SUA CONTA, CONECTADA</span><h1>Seu assistente, conectado.</h1><p><strong>'+esc(client.client_name||'Cliente MCP')+'</strong> solicita acesso aos computadores da sua conta.</p><div class="setting-help" style="padding:18px 0"><strong>'+esc(account.name||'Sua conta Codx Remote')+'</strong><br>'+esc(account.email||'Conta vinculada ao seu computador')+'</div><p>Você permite consultar e editar arquivos, executar comandos e gerenciar processos nos seus dispositivos autorizados.</p><input type="hidden" name="consent_ticket" value="'+esc(ticket)+'"><button class="btn" style="width:100%" type="submit">Autorizar conexão</button><p class="setting-help">A conexão usa automaticamente sua sessão salva. Você pode revogar o acesso no dashboard.</p></form></main>');
+}
+function authorizationHeaders(res){
+  res.setHeader('Content-Security-Policy',"frame-ancestors 'none'; form-action 'self'");
+  res.setHeader('X-Frame-Options','DENY');
+}
+app.get('/oauth/authorize',async(req,res)=>{
   try{
-    const p=req.method==='POST'?req.body:req.query, v=await validateAuthParams(p);
+    authorizationHeaders(res);
+    const p=req.query,v=await validateAuthParams(p);
     if(v.error)return res.status(400).type('text/plain').send(v.error);
-    if(req.method==='GET')return res.type('html').send(loginHtml(p));
-    const a=await verifyLogin(p.email,p.password);
-    if(!a)return res.status(401).type('html').send(loginHtml(p,'E-mail ou senha incorretos.'));
+    const a=await sessionAccount(req);
+    if(!a)return res.type('html').send(page('Conectar sua conta','<main class="auth-shell"><div class="auth-card"><span class="eyebrow">CONECTAR CODX REMOTE</span><h1>Conecte sua conta.</h1><p>Entre uma vez no Codx Remote. Depois, basta clicar em Autorizar conexão para usar seus computadores neste assistente.</p><a class="btn" style="width:100%" href="/login?next='+esc(encodeURIComponent(authorizationPath(p)))+'">Entrar para autorizar</a></div></main>'));
+    await q('DELETE FROM oauth_consents WHERE expires_at<$1',[now()]);
+    const ticket=token(32);
+    await q('INSERT INTO oauth_consents(token_hash,account_id,session_hash,request_json,expires_at) VALUES($1,$2,$3,$4,$5)',
+      [sha(ticket),a.id,sha(parseCookies(req)[COOKIE]),JSON.stringify(Object.fromEntries(new URLSearchParams(authorizationPath(p).split('?')[1]))),now()+10*60*1000]);
+    return res.type('html').send(consentHtml(a,v.client,ticket));
+  }catch(e){console.error(e);res.status(500).send('OAuth error')}
+});
+app.post('/oauth/authorize',async(req,res)=>{
+  try{
+    authorizationHeaders(res);
+    const a=await sessionAccount(req);
+    if(!a)return res.status(401).type('text/plain').send('Sua sessão expirou. Abra novamente a conexão no assistente.');
+    if(req.get('origin')!==BACKEND)return res.status(403).type('text/plain').send('invalid_origin');
+    const hash=sha(String(req.body?.consent_ticket||''));
+    const consent=(await q('SELECT * FROM oauth_consents WHERE token_hash=$1',[hash])).rows[0];
+    if(!consent||now()>Number(consent.expires_at)||consent.account_id!==a.id||consent.session_hash!==sha(parseCookies(req)[COOKIE]))return res.status(403).type('text/plain').send('Autorização expirada. Abra novamente a conexão no assistente.');
+    const p=JSON.parse(consent.request_json),v=await validateAuthParams(p);
+    if(v.error)return res.status(400).type('text/plain').send(v.error);
+    // Consume the session-bound consent once; parameters always come from the server.
+    const used=await q('DELETE FROM oauth_consents WHERE token_hash=$1 RETURNING token_hash',[hash]);
+    if(!used.rows.length)return res.status(403).type('text/plain').send('Autorização já utilizada.');
     const code=token(32);
     await q(`INSERT INTO oauth_codes(code_hash,account_id,client_id,redirect_uri,code_challenge,resource,scope,expires_at)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
@@ -563,7 +623,7 @@ app.all('/oauth/authorize',async(req,res)=>{
     const target=new URL(v.redirect);target.searchParams.set('code',code);
     if(p.state)target.searchParams.set('state',String(p.state));
     target.searchParams.set('iss',BACKEND);
-    res.redirect(302,target.toString());
+    res.redirect(303,target.toString());
   }catch(e){console.error(e);res.status(500).send('OAuth error')}
 });
 async function issueTokens(accountId,clientId,scope,resource){
@@ -666,4 +726,5 @@ app.all('/api/mcp',mcpHandler);
 app.use((req,res)=>{if(req.method==='GET'&&req.accepts('html'))return res.status(404).sendFile(path.join(PUBLIC_DIR,'404.html'));return json(res,404,{error:'not_found'})});
 
 await initDb();
+await runRequestedAccountReset(pool);
 export const server=app.listen(PORT,'0.0.0.0',()=>console.log('Codx Remote backend listening on',server.address().port));

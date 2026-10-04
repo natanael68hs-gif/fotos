@@ -110,6 +110,13 @@ export async function initDb() {
       scope TEXT NOT NULL,
       expires_at BIGINT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS oauth_consents (
+      token_hash TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      session_hash TEXT NOT NULL,
+      request_json TEXT NOT NULL,
+      expires_at BIGINT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS oauth_access (
       token_hash TEXT PRIMARY KEY,
       account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -157,6 +164,11 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS account_preferences (
       account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
       settings_json TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS admin_account_resets (
+      request_id TEXT PRIMARY KEY,
+      snapshot_json TEXT NOT NULL,
+      completed_at BIGINT NOT NULL
     );
   `);
 }
