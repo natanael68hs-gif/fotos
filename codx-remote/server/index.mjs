@@ -147,6 +147,27 @@ app.get('/health',async(_req,res)=>{
   catch(e){json(res,500,{ok:false,error:String(e.message||e)})}
 });
 
+app.get('/selftest',async(_req,res)=>{
+  let account=null;
+  try{
+    const created=await createAccount();
+    account=created.account;
+    const deviceId=crypto.randomUUID();
+    const deviceSecret=token(32);
+    await q(`INSERT INTO devices(id,account_id,device_name,secret_hash,created_at,last_seen)
+      VALUES($1,$2,$3,$4,$5,$6)`,
+      [deviceId,account.id,'CODX-SELFTEST',sha(deviceSecret),now(),now()]);
+    const row=(await q('SELECT id,device_name FROM devices WHERE id=$1 AND account_id=$2',[deviceId,account.id])).rows[0];
+    const ok=!!row && row.device_name==='CODX-SELFTEST';
+    await q('DELETE FROM accounts WHERE id=$1',[account.id]);
+    return json(res,ok?200:500,{ok,write:true,read:true,cleanup:true,version:'0.5.0'});
+  }catch(e){
+    if(account?.id){try{await q('DELETE FROM accounts WHERE id=$1',[account.id])}catch{}}
+    console.error(e);
+    return json(res,500,{ok:false,error:'selftest_failed'});
+  }
+});
+
 app.post('/api/register',async(req,res)=>{
   try{
     const deviceName=String(req.body?.deviceName||'Windows PC').slice(0,120);
