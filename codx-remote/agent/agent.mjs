@@ -8,7 +8,7 @@ const execFileAsync = promisify(execFile);
 const SERVER = process.env.CODX_REMOTE_URL || 'https://codx-remote-zrider.vercel.app';
 const ROOT = path.join(process.env.LOCALAPPDATA || os.homedir(), 'CodxRemote');
 const CONFIG = path.join(ROOT, 'config.json');
-const VERSION = '0.4.0';
+const VERSION = '0.5.0';
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
