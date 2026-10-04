@@ -1,0 +1,30 @@
+{
+  "name": "codx-remote",
+  "version": "0.3.0",
+  "description": "Acesse computadores autorizados pelo chat para trabalhar com arquivos, terminal e processos.",
+  "author": {
+    "name": "Codx Remote",
+    "url": "https://codx-remote-zrider.vercel.app"
+  },
+  "homepage": "https://codx-remote-zrider.vercel.app",
+  "repository": "https://github.com/natanael68hs-gif/fotos/tree/main/codx-remote",
+  "keywords": ["remote", "windows", "mcp", "files", "terminal", "productivity"],
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codx Remote",
+    "shortDescription": "Use seu computador autorizado diretamente pelo chat.",
+    "longDescription": "Conecte um computador Windows autorizado e trabalhe com arquivos, PowerShell, informações do sistema e processos diretamente pelo ChatGPT ou Codex.",
+    "developerName": "Codx Remote",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Write", "Actions"],
+    "websiteURL": "https://codx-remote-zrider.vercel.app",
+    "privacyPolicyURL": "https://codx-remote-zrider.vercel.app/privacy",
+    "termsOfServiceURL": "https://codx-remote-zrider.vercel.app/terms",
+    "defaultPrompt": [
+      "Liste meus dispositivos conectados.",
+      "Mostre os arquivos da minha pasta Desktop.",
+      "Veja quais processos estão usando mais recursos."
+    ],
+    "brandColor": "#3274F6"
+  }
+}
