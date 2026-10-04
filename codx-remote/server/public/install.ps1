@@ -91,7 +91,8 @@ O instalador nao pode instalar ferramentas dentro do ChatGPT sozinho.
 config.json e mcp.json contem credenciais: nao compartilhe.
 Para desativar o inicio automatico, remova Codx Remote.lnk da pasta Inicializar do Windows.
 "@, $utf8)
-& $startPath -Setup
+& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $startPath -Setup
+if ($LASTEXITCODE -ne 0) { throw 'Nao foi possivel iniciar o agente. Verifique os logs na pasta de instalacao.' }
 Write-Host "[OK] Instalado em $installRoot" -ForegroundColor Green
 Write-Host '[OK] Agente iniciado em segundo plano e configurado para iniciar com o Windows.' -ForegroundColor Green
 Write-Host 'Pode fechar este PowerShell. Se abrir a pagina de cadastro, conclua a autorizacao inicial.'
